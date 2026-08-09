@@ -10,6 +10,7 @@ import SettingsScreen from '@/screens/SettingsScreen.vue'
 import CreateScreen from '@/screens/CreateScreen.vue'
 import ItemDetail from '@/screens/ItemDetail.vue'
 import TemplatesScreen from '@/screens/TemplatesScreen.vue'
+import ChannelsScreen from '@/screens/ChannelsScreen.vue'
 
 const session = useSessionStore()
 
@@ -49,6 +50,8 @@ onMounted(() => {
     <ItemDetail v-if="nav.overlay === 'detail'" />
     <!-- Оверлей шаблонов постов (только OWNER) -->
     <TemplatesScreen v-if="nav.overlay === 'templates'" />
+    <!-- Оверлей каналов автопостинга (только OWNER) -->
+    <ChannelsScreen v-if="nav.overlay === 'channels'" />
 
     <ToastHost />
   </div>

@@ -160,13 +160,18 @@ async def set_channel(
     member: StoreMember = Depends(require_role(*OWNER_ONLY)),
     session: AsyncSession = Depends(get_session),
 ):
-    channel = _normalize_channel(payload.channel_id)
+    # Различаем «поле не прислали» и «прислали null»: без этого сохранение
+    # одного лишь водяного знака выключало бы автопостинг целиком.
+    touches_channel = "channel_id" in payload.model_fields_set
     store = (
         await session.execute(select(Store).where(Store.id == member.store_id))
     ).scalar_one()
-    store.channel_id = channel
-    sig = (payload.channel_signature or "").strip()
-    store.channel_signature = sig or None
+    channel = _normalize_channel(payload.channel_id) if touches_channel else store.channel_id
+    if touches_channel:
+        store.channel_id = channel
+    if "channel_signature" in payload.model_fields_set:
+        sig = (payload.channel_signature or "").strip()
+        store.channel_signature = sig or None
     if payload.watermark_enabled is not None:
         store.watermark_enabled = payload.watermark_enabled
     if payload.watermark_text is not None:
@@ -177,8 +182,8 @@ async def set_channel(
     # канала в мини-аппе не влияла бы на публикацию.
     existing = (
         await session.execute(select(Channel).where(Channel.store_id == store.id))
-    ).scalars().all()
-    if channel:
+    ).scalars().all() if touches_channel else []
+    if touches_channel and channel:
         primary = next((c for c in existing if c.chat_id == channel), None)
         if primary is None:
             primary = Channel(store_id=store.id, chat_id=channel)
@@ -189,7 +194,7 @@ async def set_channel(
         for c in existing:
             if c.chat_id != channel:
                 c.enabled = False
-    else:
+    elif touches_channel:
         for c in existing:
             c.enabled = False
 

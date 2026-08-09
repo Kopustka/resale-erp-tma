@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { openTemplates } from '@/app/navigation'
+import { openChannels, openTemplates } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useTemplatesStore } from '@/stores/templates'
 import { useToastStore } from '@/stores/toast'
 import { CURRENCIES, CURRENCY_SYMBOLS, type Currency, type Role } from '@/shared/api/types'
-import { storesApi } from '@/shared/api/endpoints'
+import { channelsApi, storesApi } from '@/shared/api/endpoints'
 import { hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
@@ -21,6 +21,18 @@ const activeTemplateName = computed(() => {
   if (templates.loading && !templates.list.length) return 'Загрузка…'
   return templates.activeTemplate?.name ?? 'Стандартное оформление'
 })
+
+const channelsCount = ref<number | null>(null)
+const channelsHint = computed(() => {
+  if (channelsCount.value === null) return 'Загрузка…'
+  if (channelsCount.value === 0) return 'Не настроены'
+  return `Подключено: ${channelsCount.value}`
+})
+
+function goChannels(): void {
+  hapticSelection()
+  openChannels()
+}
 
 function goTemplates(): void {
   hapticSelection()
@@ -82,29 +94,16 @@ async function loadChannel(): Promise<void> {
 async function saveChannel(): Promise<void> {
   channelBusy.value = true
   try {
-    const { channel_id } = await storesApi.setChannel({
-      channel_id: channelInput.value.trim() || null,
+    // channel_id намеренно не шлём: каналами управляет отдельный экран,
+    // а null здесь выключил бы автопостинг целиком.
+    await storesApi.setChannel({
       channel_signature: channelSignature.value.trim() || null,
       watermark_enabled: watermarkEnabled.value,
       watermark_text: watermarkText.value.trim() || null,
     })
-    channelSaved.value = channel_id
-    channelInput.value = channel_id ?? ''
-    toast.success(channel_id ? 'Канал сохранён' : 'Автопостинг выключен')
+    toast.success('Сохранено')
   } catch (e) {
     toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
-  } finally {
-    channelBusy.value = false
-  }
-}
-
-async function testChannel(): Promise<void> {
-  channelBusy.value = true
-  try {
-    await storesApi.testChannel()
-    toast.success('Тестовое сообщение отправлено в канал ✅')
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Не удалось отправить')
   } finally {
     channelBusy.value = false
   }
@@ -115,6 +114,7 @@ onMounted(() => {
   if (session.isOwner) {
     void session.fetchMembers()
     void loadChannel()
+    void channelsApi.list().then((c) => (channelsCount.value = c.length)).catch(() => undefined)
     void templates.fetch()
     void storesApi.getSettings().then((s) => (baseCurrency.value = s.base_currency))
   }
@@ -297,33 +297,22 @@ function exportCsv(): void {
           Выставленные вещи (статус «Выставлен») бот автоматически публикует в канал с фото,
           описанием, замерами и ценой. При продаже пост помечается «Продано».
         </p>
-        <label class="lbl">Канал</label>
+        <button class="nav-row tap" @click="goChannels">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Каналы</span>
+            <span class="nav-row-sub">{{ channelsHint }}</span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">›</span>
+        </button>
+
+        <label class="lbl">Общая подпись под постами</label>
         <input
-          v-model="channelInput"
+          v-model="channelSignature"
           class="field"
-          placeholder="@my_shop_channel или -100123456789"
+          maxlength="120"
+          placeholder="Написать: @username"
           autocomplete="off"
         />
-        <div class="channel-actions">
-          <button class="btn-primary tap" :disabled="channelBusy" @click="saveChannel">
-            {{ channelBusy ? '…' : 'Сохранить' }}
-          </button>
-          <button
-            class="btn-secondary tap"
-            :disabled="channelBusy || !channelSaved"
-            @click="testChannel"
-          >
-            Проверить
-          </button>
-        </div>
-        <div class="hint channel-hint">
-          <div>⚠️ Сначала добавьте бота <b>@moi_shmotka_managerbot</b> администратором канала (право «Публикация сообщений»).</div>
-          <div class="channel-variants">
-            <div>• <b>Публичный</b> канал: <code>@имя_канала</code> или ссылка t.me/…</div>
-            <div>• <b>Приватный</b> (без @): числовой ID вида <code>-100…</code></div>
-            <div>Как узнать ID приватного: добавьте бота в канал — он пришлёт вам ID в личку.</div>
-          </div>
-        </div>
 
         <label class="wm-row">
           <span class="wm-main">
@@ -342,6 +331,10 @@ function exportCsv(): void {
           placeholder="@ваш_канал (пусто — возьмём подпись выше)"
           autocomplete="off"
         />
+
+        <button class="btn-primary tap save-row" :disabled="channelBusy" @click="saveChannel">
+          {{ channelBusy ? '…' : 'Сохранить' }}
+        </button>
 
         <button class="nav-row tap" @click="goTemplates">
           <span class="nav-row-main">
@@ -663,5 +656,9 @@ function exportCsv(): void {
   width: 22px;
   height: 22px;
   accent-color: var(--tg-theme-button-color);
+}
+.save-row {
+  width: 100%;
+  margin-top: 14px;
 }
 </style>

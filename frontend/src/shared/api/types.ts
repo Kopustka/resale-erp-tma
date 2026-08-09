@@ -205,6 +205,28 @@ export interface ChannelUpdate {
   watermark_text?: string | null
 }
 
+/** Канал автопостинга склада. */
+export interface Channel {
+  id: string
+  chat_id: string
+  title: string | null
+  signature: string | null
+  enabled: boolean
+  posts_count: number
+}
+
+export interface ChannelCreate {
+  chat_id: string
+  title?: string | null
+  signature?: string | null
+}
+
+export interface ChannelPatch {
+  title?: string | null
+  signature?: string | null
+  enabled?: boolean | null
+}
+
 // --------------------------- Шаблоны постов --------------------------- //
 
 /** Шаблон подписи для автопостинга в канал. */

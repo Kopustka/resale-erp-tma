@@ -6,7 +6,7 @@ import { reactive, readonly } from 'vue'
 import type { ItemStatus } from '@/shared/api/types'
 
 export type Tab = 'inventory' | 'bi' | 'settings'
-export type Overlay = 'create' | 'detail' | 'templates' | null
+export type Overlay = 'create' | 'detail' | 'templates' | 'channels' | null
 
 interface DrilldownPayload {
   ids?: string[]
@@ -48,6 +48,11 @@ export function openDetail(itemId: string): void {
 /** Оверлей «Шаблоны постов» (из настроек, только OWNER). */
 export function openTemplates(): void {
   state.overlay = 'templates'
+}
+
+/** Оверлей «Каналы» (из настроек, только OWNER). */
+export function openChannels(): void {
+  state.overlay = 'channels'
 }
 
 export function closeOverlay(): void {

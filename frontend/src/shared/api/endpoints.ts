@@ -5,6 +5,9 @@ import type {
   AnalyticsSummary,
   CaptureSession,
   CaptureStatus,
+  Channel,
+  ChannelCreate,
+  ChannelPatch,
   ChannelSettings,
   ChannelUpdate,
   Currency,
@@ -105,6 +108,16 @@ export const mediaApi = {
   /** Загрузка фото из галереи/камеры → { photo_id: "local:<name>" }. */
   upload: (file: File, signal?: AbortSignal) =>
     uploadFile<{ photo_id: string }>(`${V1}/media/upload`, file, signal),
+}
+
+// ------------------------------ Каналы ------------------------------ //
+export const channelsApi = {
+  list: () => http.get<Channel[]>(`${V1}/channels`),
+  create: (payload: ChannelCreate) => http.post<Channel>(`${V1}/channels`, payload),
+  update: (id: string, patch: ChannelPatch) =>
+    http.patch<Channel>(`${V1}/channels/${id}`, patch),
+  remove: (id: string) => http.del<void>(`${V1}/channels/${id}`),
+  test: (id: string) => http.post<{ ok: boolean }>(`${V1}/channels/${id}/test`),
 }
 
 // ---------------------------- Шаблоны постов ---------------------------- //
