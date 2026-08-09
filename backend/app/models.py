@@ -473,6 +473,9 @@ class ItemPost(Base):
     )
     message_id: Mapped[int] = mapped_column(BigInteger)
     sold_marked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Число реакций на пост. Просмотры Bot API не отдаёт (только MTProto),
+    # поэтому реакции — единственный доступный отсюда сигнал отклика.
+    reactions: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = _created()
 
     __table_args__ = (

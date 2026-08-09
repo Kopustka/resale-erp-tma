@@ -10,6 +10,7 @@ from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
     BufferedInputFile,
+    MessageReactionCountUpdated,
     CallbackQuery,
     ChatMemberUpdated,
     InlineKeyboardButton,
@@ -19,13 +20,15 @@ from aiogram.types import (
     WebAppInfo,
 )
 from aiogram.utils.text_decorations import html_decoration
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 
 from .config import get_settings
 from .db import SessionLocal
 from .models import (
+    Channel,
     InviteStatus,
     Item,
+    ItemPost,
     Role,
     JobKind,
     JobStatus,
@@ -357,6 +360,31 @@ async def on_preview_decision(cq: CallbackQuery):
         await cq.message.reply(note)
 
 
+@dp.message_reaction_count()
+async def on_reactions(event: MessageReactionCountUpdated):
+    """Счётчик реакций на пост канала — записываем в карточку публикации."""
+    total = sum(r.total_count for r in (event.reactions or []))
+    chat_id = str(event.chat.id)
+    username = f"@{event.chat.username}" if event.chat.username else None
+    async with SessionLocal() as s:
+        # Канал мог быть заведён и по числовому id, и по @username.
+        conds = [Channel.chat_id == chat_id]
+        if username:
+            conds.append(Channel.chat_id == username)
+        ch = (
+            await s.execute(select(Channel).where(or_(*conds)))
+        ).scalars().first()
+        if ch is None:
+            return
+        await s.execute(
+            update(ItemPost)
+            .where(ItemPost.channel_id == ch.id, ItemPost.message_id == event.message_id)
+            .values(reactions=total)
+            .execution_options(synchronize_session=False)
+        )
+        await s.commit()
+
+
 @dp.my_chat_member()
 async def on_added_to_chat(event: ChatMemberUpdated):
     """Бота добавили/сделали админом в канале — сообщаем тому, кто добавил,
@@ -416,7 +444,8 @@ async def set_menu_button():
 
 async def main():
     await set_menu_button()
-    await dp.start_polling(bot)
+    # Реакции Telegram не присылает без явной подписки на тип обновления.
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
 if __name__ == "__main__":

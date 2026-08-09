@@ -66,6 +66,7 @@ class AnalyticsRepository:
                     func.avg(
                         case((and_(is_sold, Item.sold_date.isnot(None)), days))
                     ).label("avg_days"),
+                    func.coalesce(func.sum(ItemPost.reactions), 0).label("reactions"),
                 )
                 .select_from(Channel)
                 .outerjoin(ItemPost, ItemPost.channel_id == Channel.id)
@@ -95,6 +96,7 @@ class AnalyticsRepository:
                     "sell_through": (sold / posted * 100) if posted else None,
                     "avg_days": float(r.avg_days) if r.avg_days is not None else None,
                     "profit": r.profit or Decimal(0),
+                    "reactions": r.reactions or 0,
                 }
             )
         return out

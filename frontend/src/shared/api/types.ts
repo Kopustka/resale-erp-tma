@@ -165,6 +165,7 @@ export interface ChannelStat {
   sell_through: number | null
   avg_days: number | null
   profit: number
+  reactions: number
 }
 
 export interface AnalyticsSummary {

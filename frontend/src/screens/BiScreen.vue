@@ -113,7 +113,8 @@ function barWidth(avgDays: number): string {
               <span class="ch-name">{{ ch.title || ch.chat_id }}</span>
               <span v-if="ch.sell_through !== null" class="hint small">
                 конверсия {{ Math.round(ch.sell_through) }}%<template v-if="ch.avg_days !== null">
-                  · {{ Math.round(ch.avg_days) }} дн.</template>
+                  · {{ Math.round(ch.avg_days) }} дн.</template><template v-if="ch.reactions">
+                  · {{ ch.reactions }} ❤</template>
               </span>
             </span>
             <span class="c-n">{{ ch.posted }}</span>

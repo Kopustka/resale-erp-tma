@@ -179,6 +179,7 @@ class ChannelStat(BaseModel):
     sell_through: float | None = None
     avg_days: float | None = None
     profit: Decimal
+    reactions: int = 0
 
 
 class AnalyticsSummary(BaseModel):
