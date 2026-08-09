@@ -9,6 +9,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     ChatMemberUpdated,
     InlineKeyboardButton,
@@ -24,6 +25,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import (
     InviteStatus,
+    Item,
     Role,
     JobKind,
     JobStatus,
@@ -36,6 +38,7 @@ from .models import (
 )
 from .services import ai_template, post_template, preview, template_capture
 from .services.ai_describe import AiGenerationError, AiNotConfigured
+from .services.fsm import SOLD_STATUSES
 
 settings = get_settings()
 bot = Bot(token=settings.bot_token)
@@ -175,6 +178,73 @@ async def on_template_sample(message: Message):
         parse_mode="HTML",
     )
     await message.answer(demo, parse_mode="HTML", reply_markup=_webapp_kb())
+
+
+@dp.message(CommandStart(deep_link=True, magic=F.args.startswith("item_")))
+async def cmd_start_item_card(message: Message, command: CommandObject):
+    """Переход из канала: показываем карточку вещи и кнопку в мини-апп."""
+    raw = (command.args or "")[len("item_"):]
+    try:
+        item_id = uuid.UUID(raw)
+    except ValueError:
+        await message.answer("Ссылка неверна.", reply_markup=_webapp_kb())
+        return
+
+    async with SessionLocal() as s:
+        item = (
+            await s.execute(select(Item).where(Item.id == item_id))
+        ).scalar_one_or_none()
+        if item is None or item.archived_at is not None:
+            await message.answer("Вещь больше не доступна.", reply_markup=_webapp_kb())
+            return
+        store = (
+            await s.execute(select(Store).where(Store.id == item.store_id))
+        ).scalar_one_or_none()
+        tpl = (
+            await s.execute(
+                select(PostTemplate.body).where(
+                    PostTemplate.store_id == item.store_id,
+                    PostTemplate.is_default.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        # Показываем карточку любому — это витрина, финансов в ней нет.
+        from .routers.items import _item_to_post_dict
+
+        post = _item_to_post_dict(item)
+        sold = item.status in SOLD_STATUSES
+        caption = post_template.render(
+            tpl or post_template.DEFAULT_TEMPLATE_BODY,
+            post_template.build_context(
+                post, store.channel_signature if store else None
+            ),
+        )
+        photos = list(item.photo_file_ids or [])
+
+    if sold:
+        caption = "✅ <b>ПРОДАНО</b>\n\n" + caption
+    photo = photos[0] if photos else None
+    if photo and photo.startswith("local:"):
+        data = _read_local_photo(photo)
+        if data is not None:
+            await message.answer_photo(
+                BufferedInputFile(data, filename="item.jpg"),
+                caption=caption[:1024],
+                parse_mode="HTML",
+                reply_markup=_webapp_kb(),
+            )
+            return
+    await message.answer(caption[:4096], parse_mode="HTML", reply_markup=_webapp_kb())
+
+
+def _read_local_photo(entry: str) -> bytes | None:
+    from pathlib import Path
+
+    name = entry[len("local:"):]
+    if "/" in name or "\\" in name or ".." in name:
+        return None
+    p = Path(settings.media_dir) / name
+    return p.read_bytes() if p.exists() else None
 
 
 @dp.message(CommandStart())

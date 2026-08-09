@@ -55,6 +55,7 @@ PLACEHOLDERS: list[dict[str, str]] = [
     {"key": "measurements", "label": "Замеры одной строкой", "example": "Длина 72 · Ширина 58 · Рукав 65"},
     {"key": "hashtags", "label": "Хэштеги", "example": "#Nike #Зипхуди #L"},
     {"key": "signature", "label": "Подпись канала", "example": "Написать: @seller"},
+    {"key": "link", "label": "Ссылка на карточку в боте", "example": "https://t.me/bot?start=item_…"},
 ]
 
 VALID_KEYS = {p["key"] for p in PLACEHOLDERS}
@@ -88,6 +89,7 @@ DEMO_ITEM: dict = {
     "sleeve_cm": 65,
 }
 DEMO_SIGNATURE = "Написать: @seller"
+DEMO_LINK = "https://t.me/your_bot?start=item_1042"
 
 
 def esc(s: str) -> str:
@@ -110,8 +112,14 @@ def _hashtag(value: str) -> str:
     return f"#{cleaned}" if cleaned else ""
 
 
-def build_context(item: dict, signature: str | None = None) -> dict[str, str]:
-    """Готовит значения плейсхолдеров. Всё уже HTML-экранировано."""
+def build_context(
+    item: dict, signature: str | None = None, link: str | None = None
+) -> dict[str, str]:
+    """Готовит значения плейсхолдеров. Всё уже HTML-экранировано.
+
+    link — deep link на карточку вещи в боте; пустой, если не передан
+    (тогда строка с {link} из шаблона просто исчезнет).
+    """
     from .fx import symbol as cur_symbol
 
     cur = cur_symbol(item.get("price_currency") or "BYN")
@@ -146,6 +154,7 @@ def build_context(item: dict, signature: str | None = None) -> dict[str, str]:
         "measurements": " · ".join(meas_parts),
         "hashtags": " ".join(t for t in tags if t),
         "signature": str(signature or "").strip(),
+        "link": str(link or "").strip(),
     }
     # price_line непустой всегда — экранируем уже готовые значения.
     return {k: esc(v) for k, v in raw.items()}
@@ -178,7 +187,7 @@ def render(body: str, context: dict[str, str]) -> str:
 
 def render_demo(body: str) -> str:
     """Превью шаблона на демо-вещи — для редактора в мини-аппе."""
-    return render(body, build_context(DEMO_ITEM, DEMO_SIGNATURE))
+    return render(body, build_context(DEMO_ITEM, DEMO_SIGNATURE, DEMO_LINK))
 
 
 def unknown_placeholders(body: str) -> list[str]:

@@ -45,7 +45,10 @@ async def get_bot_username() -> str | None:
 
 
 def build_caption(
-    item: dict, signature: str | None = None, template_body: str | None = None
+    item: dict,
+    signature: str | None = None,
+    template_body: str | None = None,
+    link: str | None = None,
 ) -> str:
     """Собирает подпись поста по шаблону склада.
 
@@ -55,7 +58,13 @@ def build_caption(
     from . import post_template as pt
 
     body = template_body or pt.DEFAULT_TEMPLATE_BODY
-    return pt.render(body, pt.build_context(item, signature))
+    return pt.render(body, pt.build_context(item, signature, link))
+
+
+async def item_link(item_id) -> str | None:
+    """Deep link на карточку вещи в боте: t.me/<bot>?start=item_<uuid>."""
+    username = await get_bot_username()
+    return f"https://t.me/{username}?start=item_{item_id}" if username else None
 
 
 def _load_local(entry: str) -> bytes | None:
@@ -78,7 +87,8 @@ async def post_item(
     watermark_text — если задан, накладывается на локальные фото (копия,
     оригинал в хранилище не меняется).
     """
-    caption = build_caption(item, signature, template_body)
+    link = await item_link(item["id"]) if item.get("id") else None
+    caption = build_caption(item, signature, template_body, link)
     photos: list[str] = item.get("photo_file_ids") or []
 
     async with httpx.AsyncClient(timeout=40) as client:
@@ -163,7 +173,8 @@ async def edit_caption(
     У поста без фото подписи нет — там правится текст сообщения, иначе
     Bot API отвечает «there is no caption in the message to edit».
     """
-    body = build_caption(item, signature, template_body)
+    link = await item_link(item["id"]) if item.get("id") else None
+    body = build_caption(item, signature, template_body, link)
     text = (prefix + body)[:1024] if prefix else body[:1024]
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(

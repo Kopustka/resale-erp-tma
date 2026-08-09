@@ -498,6 +498,7 @@ def _item_to_post_dict(it: Item) -> dict:
     # Цена в объявлении: list_price, иначе фактическая цена продажи (в валюте продажи).
     price = it.list_price_orig if it.list_price_orig is not None else it.selling_price_orig
     return {
+        "id": it.id,
         "title": it.title,
         "description": it.description,
         "brand": it.brand,
