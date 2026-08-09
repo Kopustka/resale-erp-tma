@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import analytics, items, media, stores, templates
+from .routers import analytics, channels, items, media, stores, templates
 
 settings = get_settings()
 log = logging.getLogger("api")
@@ -25,6 +25,32 @@ log = logging.getLogger("api")
 _ENSURE_COLUMNS = (
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_text VARCHAR(60)",
+    "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS channel_uid UUID",
+)
+
+# Перенос на мультиканальность. Оба шага идемпотентны (NOT EXISTS + ON CONFLICT),
+# поэтому безопасно выполняются при каждом старте, а не один раз.
+_BACKFILL = (
+    # 1. Настроенный канал склада -> строка в channels.
+    """
+    INSERT INTO channels (store_id, chat_id, signature, enabled)
+    SELECT s.id, s.channel_id, s.channel_signature, TRUE
+    FROM stores s
+    WHERE s.channel_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM channels c WHERE c.store_id = s.id AND c.chat_id = s.channel_id
+      )
+    """,
+    # 2. Уже опубликованные посты -> item_posts, чтобы пометка «продано»
+    #    и защита от повторной публикации продолжали работать.
+    """
+    INSERT INTO item_posts (item_id, channel_id, message_id, sold_marked)
+    SELECT i.id, c.id, i.channel_message_id, FALSE
+    FROM items i
+    JOIN channels c ON c.store_id = i.store_id
+    WHERE i.channel_message_id IS NOT NULL
+    ON CONFLICT ON CONSTRAINT uq_post_item_channel DO NOTHING
+    """,
 )
 
 
@@ -33,6 +59,8 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         for stmt in _ENSURE_COLUMNS:
+            await conn.execute(text(stmt))
+        for stmt in _BACKFILL:
             await conn.execute(text(stmt))
 
     from .services.post_worker import run_forever
@@ -89,3 +117,4 @@ app.include_router(analytics.router)
 app.include_router(stores.router)
 app.include_router(media.router)
 app.include_router(templates.router)
+app.include_router(channels.router)

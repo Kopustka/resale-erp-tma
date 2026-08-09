@@ -12,9 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import CAN_EDIT, get_active_membership, get_current_user
 from ..db import SessionLocal, get_session
 from ..models import (
+    Channel,
     Item,
+    ItemPost,
     ItemStatus,
     JobKind,
+    JobStatus,
+    PostJob,
     PostTemplate,
     Role,
     Store,
@@ -470,31 +474,12 @@ async def patch_status(
     await session.commit()
     fresh = await repo.get(member.store_id, item_id)
 
-    # Автопостинг в канал (в фоне): при выставлении — публикуем, при продаже — метим.
-    channel = store.channel_id if store else None
-    signature = store.channel_signature if store else None
-    if channel:
-        if target == ItemStatus.LISTED and fresh.channel_message_id is None:
-            if not await post_queue.has_pending(session, item_id, JobKind.POST_ITEM):
-                await post_queue.enqueue(
-                    session,
-                    store_id=member.store_id,
-                    kind=JobKind.POST_ITEM,
-                    channel_id=channel,
-                    item_id=item_id,
-                )
-                await session.commit()
-        elif target in SOLD_STATUSES and fresh.channel_message_id is not None:
-            if not await post_queue.has_pending(session, item_id, JobKind.MARK_SOLD):
-                await post_queue.enqueue(
-                    session,
-                    store_id=member.store_id,
-                    kind=JobKind.MARK_SOLD,
-                    channel_id=channel,
-                    item_id=item_id,
-                    message_id=fresh.channel_message_id,
-                )
-                await session.commit()
+    # Автопостинг: при выставлении ставим публикацию во все включённые каналы,
+    # при продаже — пометку «продано» в каждом, где вещь уже висит.
+    if target == ItemStatus.LISTED:
+        await _enqueue_publish(session, member.store_id, item_id)
+    elif target in SOLD_STATUSES:
+        await _enqueue_mark_sold(session, member.store_id, item_id)
 
     out = to_out(fresh, show_finance=_can_see_finance(member))
     await idempotency.store_result(scope, idempotency_key, out.model_dump(mode="json"))
@@ -520,6 +505,90 @@ def _item_to_post_dict(it: Item) -> dict:
         "price_currency": it.price_currency,
         "photo_file_ids": list(it.photo_file_ids or []),
     }
+
+
+async def _enqueue_publish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:
+    """Ставит публикацию во все включённые каналы склада, кроме уже опубликованных."""
+    channels = (
+        await session.execute(
+            select(Channel).where(Channel.store_id == store_id, Channel.enabled.is_(True))
+        )
+    ).scalars().all()
+    if not channels:
+        return
+    posted = set(
+        (
+            await session.execute(
+                select(ItemPost.channel_id).where(ItemPost.item_id == item_id)
+            )
+        ).scalars().all()
+    )
+    queued = set(
+        (
+            await session.execute(
+                select(PostJob.channel_uid).where(
+                    PostJob.item_id == item_id,
+                    PostJob.kind == JobKind.POST_ITEM,
+                    PostJob.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                )
+            )
+        ).scalars().all()
+    )
+    added = False
+    for ch in channels:
+        if ch.id in posted or ch.id in queued:
+            continue
+        await post_queue.enqueue(
+            session,
+            store_id=store_id,
+            kind=JobKind.POST_ITEM,
+            channel_id=ch.chat_id,
+            channel_uid=ch.id,
+            item_id=item_id,
+        )
+        added = True
+    if added:
+        await session.commit()
+
+
+async def _enqueue_mark_sold(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:
+    """Помечает проданными все посты вещи во всех каналах, где она висит."""
+    rows = (
+        await session.execute(
+            select(ItemPost, Channel)
+            .join(Channel, Channel.id == ItemPost.channel_id)
+            .where(ItemPost.item_id == item_id, ItemPost.sold_marked.is_(False))
+        )
+    ).all()
+    if not rows:
+        return
+    queued = set(
+        (
+            await session.execute(
+                select(PostJob.channel_uid).where(
+                    PostJob.item_id == item_id,
+                    PostJob.kind == JobKind.MARK_SOLD,
+                    PostJob.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                )
+            )
+        ).scalars().all()
+    )
+    added = False
+    for post, ch in rows:
+        if ch.id in queued:
+            continue
+        await post_queue.enqueue(
+            session,
+            store_id=store_id,
+            kind=JobKind.MARK_SOLD,
+            channel_id=ch.chat_id,
+            channel_uid=ch.id,
+            item_id=item_id,
+            message_id=post.message_id,
+        )
+        added = True
+    if added:
+        await session.commit()
 
 
 async def _watermark_text(session, store_id: uuid.UUID) -> str | None:

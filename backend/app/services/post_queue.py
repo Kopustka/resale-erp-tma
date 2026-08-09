@@ -34,6 +34,7 @@ async def enqueue(
     store_id: uuid.UUID,
     kind: JobKind,
     channel_id: str,
+    channel_uid: uuid.UUID | None = None,
     item_id: uuid.UUID | None = None,
     message_id: int | None = None,
     delay_seconds: int = 0,
@@ -44,6 +45,7 @@ async def enqueue(
         item_id=item_id,
         kind=kind,
         channel_id=channel_id,
+        channel_uid=channel_uid,
         message_id=message_id,
         run_after=_now() + timedelta(seconds=delay_seconds),
     )

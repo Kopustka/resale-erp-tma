@@ -280,3 +280,25 @@ class CaptureStatusOut(BaseModel):
     status: str  # waiting | armed | done | expired | error
     template_id: uuid.UUID | None = None
     error: str | None = None
+
+
+# --------------------------- Каналы автопостинга --------------------------- #
+class ChannelOut(BaseModel):
+    id: uuid.UUID
+    chat_id: str
+    title: str | None = None
+    signature: str | None = None
+    enabled: bool
+    posts_count: int = 0
+
+
+class ChannelCreate(BaseModel):
+    chat_id: str = Field(..., min_length=1, max_length=80)
+    title: str | None = Field(None, max_length=120)
+    signature: str | None = Field(None, max_length=120)
+
+
+class ChannelUpdateOne(BaseModel):
+    title: str | None = Field(None, max_length=120)
+    signature: str | None = Field(None, max_length=120)
+    enabled: bool | None = None

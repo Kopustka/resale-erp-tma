@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import OWNER_ONLY, get_active_membership, get_current_user, require_role
 from ..db import get_session
 from ..models import (
+    Channel,
     InviteStatus,
     Role,
     Store,
@@ -170,6 +171,28 @@ async def set_channel(
         store.watermark_enabled = payload.watermark_enabled
     if payload.watermark_text is not None:
         store.watermark_text = payload.watermark_text.strip() or None
+
+    # Совместимость: постинг работает по таблице channels, а этот старый
+    # эндпоинт правит поля склада. Держим их согласованными, иначе смена
+    # канала в мини-аппе не влияла бы на публикацию.
+    existing = (
+        await session.execute(select(Channel).where(Channel.store_id == store.id))
+    ).scalars().all()
+    if channel:
+        primary = next((c for c in existing if c.chat_id == channel), None)
+        if primary is None:
+            primary = Channel(store_id=store.id, chat_id=channel)
+            session.add(primary)
+        primary.enabled = True
+        primary.signature = store.channel_signature
+        # Прочие каналы, заведённые через старый экран, гасим: он одноканальный.
+        for c in existing:
+            if c.chat_id != channel:
+                c.enabled = False
+    else:
+        for c in existing:
+            c.enabled = False
+
     await session.commit()
     return ChannelSettings(
         channel_id=channel,

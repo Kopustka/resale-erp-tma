@@ -391,6 +391,10 @@ class PostJob(Base):
         SAEnum(JobStatus, name="job_status_enum"), default=JobStatus.PENDING
     )
     channel_id: Mapped[str] = mapped_column(String(80))
+    # Ссылка на канал: нужна, чтобы записать ItemPost после публикации.
+    channel_uid: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
     # Для MARK_SOLD — какой пост править.
     message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
@@ -406,4 +410,56 @@ class PostJob(Base):
     __table_args__ = (
         Index("ix_jobs_claim", "status", "run_after"),
         Index("ix_jobs_store_status", "store_id", "status"),
+    )
+
+
+class Channel(Base):
+    """Канал автопостинга. Складов много, каналов у склада — тоже.
+
+    Пришёл на смену полям stores.channel_id / channel_signature: они
+    остаются как legacy и синхронизируются с основным каналом ради
+    совместимости со старым API.
+    """
+
+    __tablename__ = "channels"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    # @username или числовой -100…
+    chat_id: Mapped[str] = mapped_column(String(80))
+    title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    signature: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+    __table_args__ = (
+        UniqueConstraint("store_id", "chat_id", name="uq_channel_store_chat"),
+    )
+
+
+class ItemPost(Base):
+    """Опубликованный пост вещи в конкретном канале.
+
+    Заменяет одиночное Item.channel_message_id: с несколькими каналами
+    нужно знать, какое сообщение править при продаже в каждом из них.
+    """
+
+    __tablename__ = "item_posts"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("items.id"), index=True
+    )
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("channels.id"), index=True
+    )
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    sold_marked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        UniqueConstraint("item_id", "channel_id", name="uq_post_item_channel"),
     )

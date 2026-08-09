@@ -13,7 +13,7 @@ import time
 from sqlalchemy import select, update
 
 from ..db import SessionLocal
-from ..models import Item, JobKind, PostJob, Store
+from ..models import Channel, Item, ItemPost, JobKind, PostJob, Store
 from . import post_queue, telegram_post
 
 log = logging.getLogger("worker")
@@ -48,12 +48,19 @@ async def _load_context(session, job: PostJob):
     store = (
         await session.execute(select(Store).where(Store.id == job.store_id))
     ).scalar_one_or_none()
+    # Подпись берём канальную, если задана: у разных каналов она может отличаться.
+    signature = store.channel_signature if store else None
+    if job.channel_uid is not None:
+        ch = (
+            await session.execute(select(Channel).where(Channel.id == job.channel_uid))
+        ).scalar_one_or_none()
+        if ch is not None and ch.signature:
+            signature = ch.signature
     return {
         "post": _item_to_post_dict(item),
-        "signature": store.channel_signature if store else None,
+        "signature": signature,
         "template": await _default_template_body(session, job.store_id),
         "watermark": await _watermark_text(session, job.store_id),
-        "channel_message_id": item.channel_message_id,
     }
 
 
@@ -66,7 +73,15 @@ async def _run_job(job: PostJob) -> None:
                 return
 
             if job.kind == JobKind.POST_ITEM:
-                if ctx["channel_message_id"] is not None:
+                already = (
+                    await session.execute(
+                        select(ItemPost.id).where(
+                            ItemPost.item_id == job.item_id,
+                            ItemPost.channel_id == job.channel_uid,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if already is not None:
                     await post_queue.mark_done(session, job.id)  # уже опубликовано
                     return
                 await _respect_rate_limit(job.channel_id)
@@ -78,6 +93,15 @@ async def _run_job(job: PostJob) -> None:
                     ctx["watermark"],
                 )
                 if msg_id is not None:
+                    if job.channel_uid is not None:
+                        session.add(
+                            ItemPost(
+                                item_id=job.item_id,
+                                channel_id=job.channel_uid,
+                                message_id=msg_id,
+                            )
+                        )
+                    # legacy-поле: первый пост, чтобы старые места не сломались
                     await session.execute(
                         update(Item)
                         .where(Item.id == job.item_id, Item.channel_message_id.is_(None))
@@ -87,7 +111,7 @@ async def _run_job(job: PostJob) -> None:
                     await session.commit()
 
             elif job.kind == JobKind.MARK_SOLD:
-                message_id = job.message_id or ctx["channel_message_id"]
+                message_id = job.message_id
                 if message_id is None:
                     await post_queue.mark_done(session, job.id)  # нечего править
                     return
@@ -99,6 +123,16 @@ async def _run_job(job: PostJob) -> None:
                     ctx["signature"],
                     ctx["template"],
                 )
+                await session.execute(
+                    update(ItemPost)
+                    .where(
+                        ItemPost.item_id == job.item_id,
+                        ItemPost.channel_id == job.channel_uid,
+                    )
+                    .values(sold_marked=True)
+                    .execution_options(synchronize_session=False)
+                )
+                await session.commit()
 
             await post_queue.mark_done(session, job.id)
 
