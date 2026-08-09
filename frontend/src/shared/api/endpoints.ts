@@ -140,6 +140,10 @@ export const templatesApi = {
   /** Рендер тела шаблона на демо-данных → HTML-подпись поста. */
   preview: (body: string) => http.post<{ caption: string }>(`${V1}/templates/preview`, { body }),
 
+  /** Собрать шаблон по словесному описанию (не сохраняет). */
+  generate: (brief: string) =>
+    http.post<{ name: string; body: string }>(`${V1}/templates/generate`, { brief }),
+
   /** Старт сессии «скопировать дизайн из поста». */
   startCapture: () => http.post<CaptureSession>(`${V1}/templates/capture`),
 

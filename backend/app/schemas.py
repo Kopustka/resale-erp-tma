@@ -281,6 +281,15 @@ class TemplatePlaceholder(BaseModel):
     example: str
 
 
+class TemplateBriefIn(BaseModel):
+    brief: str = Field(..., min_length=3, max_length=1500)
+
+
+class TemplateGenerated(BaseModel):
+    name: str
+    body: str
+
+
 class TemplatePreviewIn(BaseModel):
     body: str = Field(..., min_length=1)
 

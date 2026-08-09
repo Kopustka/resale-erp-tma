@@ -20,6 +20,7 @@ interface TemplatesState {
   placeholders: TemplatePlaceholder[]
   loading: boolean
   saving: boolean
+  generating: boolean
   error: string | null
   /** id шаблона, который подсвечиваем в списке (после капчи/создания). */
   highlightId: string | null
@@ -43,6 +44,7 @@ export const useTemplatesStore = defineStore('templates', {
     placeholders: [],
     loading: false,
     saving: false,
+    generating: false,
     error: null,
     highlightId: null,
     captureToken: null,
@@ -155,6 +157,24 @@ export const useTemplatesStore = defineStore('templates', {
     async preview(body: string): Promise<string> {
       const { caption } = await templatesApi.preview(body)
       return caption
+    },
+
+    /**
+     * Собирает шаблон по описанию и сразу сохраняет — как и клонирование
+     * дизайна. Пользователь дальше правит его в редакторе.
+     */
+    async generateFromBrief(brief: string): Promise<PostTemplate | null> {
+      if (this.generating) return null
+      this.generating = true
+      try {
+        const draft = await templatesApi.generate(brief)
+        return await this.create(draft.name, draft.body)
+      } catch (e) {
+        useToastStore().error(messageOf(e, 'Не удалось собрать шаблон'))
+        return null
+      } finally {
+        this.generating = false
+      }
     },
 
     // ------------------- «Скопировать дизайн из поста» ------------------- //

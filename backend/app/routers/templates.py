@@ -16,12 +16,16 @@ from ..schemas import (
     PostTemplateCreate,
     PostTemplateOut,
     PostTemplateUpdate,
+    TemplateBriefIn,
+    TemplateGenerated,
     TemplatePlaceholder,
     TemplatePreviewIn,
     TemplatePreviewOut,
 )
+from ..services import ai_template
 from ..services import post_template as pt
 from ..services import template_capture
+from ..services.ai_describe import AiGenerationError, AiNotConfigured
 from ..services.telegram_post import get_bot_username
 
 router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
@@ -70,6 +74,21 @@ async def preview(
     except pt.TemplateError as e:
         raise HTTPException(422, str(e))
     return TemplatePreviewOut(caption=pt.render_demo(payload.body))
+
+
+@router.post("/generate", response_model=TemplateGenerated)
+async def generate(
+    payload: TemplateBriefIn,
+    _: StoreMember = Depends(require_role(*OWNER_ONLY)),
+):
+    """Собирает шаблон по словесному описанию. Не сохраняет — только предлагает."""
+    try:
+        result = await ai_template.generate_template_from_brief(payload.brief)
+    except AiNotConfigured:
+        raise HTTPException(503, "AI-генерация не настроена: не задан GEMINI_API_KEY")
+    except AiGenerationError as e:
+        raise HTTPException(502, str(e))
+    return TemplateGenerated(**result)
 
 
 # --------------------------------------------------------------------------- #

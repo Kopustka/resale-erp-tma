@@ -17,6 +17,8 @@ const toast = useToastStore()
 const editorOpen = ref(false)
 const editing = ref<PostTemplate | null>(null)
 const confirmDeleteId = ref<string | null>(null)
+const briefOpen = ref(false)
+const brief = ref('')
 
 const waitingHint = computed(() =>
   templates.captureStatus === 'armed'
@@ -44,6 +46,20 @@ async function startCapture(): Promise<void> {
 function cancelCapture(): void {
   hapticSelection()
   templates.cancelCapture()
+}
+
+async function runGenerate(): Promise<void> {
+  const text = brief.value.trim()
+  if (text.length < 3) return
+  hapticImpact('medium')
+  const created = await templates.generateFromBrief(text)
+  if (created) {
+    brief.value = ''
+    briefOpen.value = false
+    toast.success('Шаблон собран — проверьте и поправьте')
+    editing.value = created
+    editorOpen.value = true
+  }
 }
 
 function openNew(): void {
@@ -125,9 +141,35 @@ function onSaved(): void {
           </div>
         </template>
 
-        <button v-else class="btn-primary tap" :disabled="templates.captureStarting" @click="startCapture">
-          ✨ Скопировать дизайн из поста
-        </button>
+        <template v-else>
+          <button class="btn-primary tap" :disabled="templates.captureStarting" @click="startCapture">
+            ✨ Скопировать дизайн из поста
+          </button>
+
+          <template v-if="briefOpen">
+            <label class="lbl">Опишите, какой пост хотите</label>
+            <textarea
+              v-model="brief"
+              class="field brief"
+              rows="3"
+              maxlength="1500"
+              placeholder="Например: минималистичный пост — название, цена, размер и хэштеги, без лишнего"
+            />
+            <div class="brief-actions">
+              <button
+                class="btn-secondary tap"
+                :disabled="brief.trim().length < 3 || templates.generating"
+                @click="runGenerate"
+              >
+                {{ templates.generating ? 'Собираю…' : 'Собрать' }}
+              </button>
+              <button class="btn-secondary tap" @click="briefOpen = false">Отмена</button>
+            </div>
+          </template>
+          <button v-else class="btn-secondary tap gen" @click="briefOpen = true">
+            🪄 Собрать шаблон по описанию
+          </button>
+        </template>
         <p v-if="!templates.capturing" class="note">
           Пришлите боту любой понравившийся пост — он повторит его оформление.
         </p>
@@ -384,5 +426,32 @@ function onSaved(): void {
 }
 .empty {
   padding: 8px 0;
+}
+.gen {
+  margin-top: var(--gap);
+}
+.field {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
+  border: 1px solid transparent;
+}
+.brief {
+  margin-top: 4px;
+  resize: vertical;
+  font: inherit;
+}
+.lbl {
+  display: block;
+  font-size: 12px;
+  color: var(--tg-theme-hint-color);
+  margin: 12px 0 4px;
+}
+.brief-actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: var(--gap);
 }
 </style>

@@ -54,6 +54,27 @@ CLONE_PROMPT = f"""Ты превращаешь пример поста из Tele
 {{"name": "<короткое название шаблона>", "body": "<тело шаблона с переводами строк как \\n>"}}"""
 
 
+BRIEF_PROMPT = f"""Ты составляешь ШАБЛОН поста для Telegram-канала, где продают б/у одежду (ресейл).
+
+Пользователь словами описывает, какой пост хочет. Твоя задача — собрать шаблон под это описание.
+
+Доступные плейсхолдеры (использовать можно ТОЛЬКО их):
+{_PLACEHOLDER_DOC}
+
+Правила:
+1. Шаблон — это готовая вёрстка поста: постоянный текст плюс плейсхолдеры вместо данных товара.
+2. Разметка только телеграмная: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="...">, <blockquote>, <tg-spoiler>. Другие теги запрещены.
+3. Название вещи почти всегда стоит выделить жирным и поставить первым.
+4. Не выдумывай плейсхолдеры вне списка. Если нужного поля нет — обойдись постоянным текстом.
+5. Каждый блок на отдельной строке. Пустые строки между смысловыми блоками — это нормально и улучшает читаемость.
+6. Не пиши инструкций и пояснений внутри шаблона. Только то, что должно оказаться в посте.
+7. Держись в пределах 700 символов: подпись поста в Telegram ограничена 1024 вместе с подставленными данными.
+8. Название шаблона придумай короткое и по смыслу (до 40 символов), на русском.
+
+Ответь СТРОГО в формате JSON без markdown и пояснений:
+{{"name": "<короткое название>", "body": "<тело шаблона с переводами строк как \\n>"}}"""
+
+
 def _strip_disallowed_tags(body: str) -> str:
     """Убирает теги вне белого списка, оставляя их содержимое."""
 
@@ -84,6 +105,56 @@ def repair(body: str) -> str:
     plain = re.sub(r"\n{3,}", "\n\n", _strip_all_tags(body)).strip()
     validate_body(plain)
     return plain
+
+
+async def _ask_gemini(prompt: str, timeout: int = 45) -> dict:
+    """Один запрос к модели со строгим JSON на выходе."""
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.gemini_model}:generateContent"
+    )
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4},
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(
+            url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
+        )
+    if r.status_code == 429:
+        raise AiGenerationError("Квота Gemini исчерпана — попробуйте чуть позже")
+    if r.status_code != 200:
+        raise AiGenerationError(f"Gemini API: HTTP {r.status_code}")
+    try:
+        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return json.loads(text)
+    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
+        raise AiGenerationError(f"Не удалось разобрать ответ модели: {e}")
+
+
+def _finish(parsed: dict, fallback_name: str) -> dict[str, str]:
+    """Общая для обоих режимов проверка и починка ответа модели."""
+    name = str(parsed.get("name") or "").strip()[:60]
+    try:
+        tpl_body = repair(str(parsed["body"]))
+    except KeyError:
+        raise AiGenerationError("Модель не вернула тело шаблона")
+    except TemplateError as e:
+        raise AiGenerationError(f"Модель вернула негодный шаблон: {e}")
+    if not render_demo(tpl_body).strip():
+        raise AiGenerationError("Шаблон не даёт текста на демо-данных")
+    return {"name": name or fallback_name, "body": tpl_body}
+
+
+async def generate_template_from_brief(brief: str) -> dict[str, str]:
+    """Собирает шаблон по словесному описанию. {"name","body"}."""
+    if not settings.gemini_api_key:
+        raise AiNotConfigured()
+    brief = (brief or "").strip()
+    if not brief:
+        raise AiGenerationError("Пустое описание")
+    parsed = await _ask_gemini(BRIEF_PROMPT + "\n\nОПИСАНИЕ ОТ ПОЛЬЗОВАТЕЛЯ:\n" + brief[:1500])
+    return _finish(parsed, "Шаблон по описанию")
 
 
 async def clone_template_from_sample(sample_html: str) -> dict[str, str]:
