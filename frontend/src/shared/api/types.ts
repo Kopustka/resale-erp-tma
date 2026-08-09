@@ -212,6 +212,7 @@ export interface ChannelSettings {
   bump_enabled: boolean
   bump_after_days: number
   preview_before_post: boolean
+  subscriptions_enabled: boolean
 }
 
 /** Частичное обновление настроек автопостинга. */
@@ -223,6 +224,7 @@ export interface ChannelUpdate {
   bump_enabled?: boolean | null
   bump_after_days?: number | null
   preview_before_post?: boolean | null
+  subscriptions_enabled?: boolean | null
 }
 
 /** Канал автопостинга склада. */

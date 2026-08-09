@@ -37,7 +37,7 @@ from ..schemas import (
     VoiceParseRequest,
     VoiceParseResult,
 )
-from ..services import fx, idempotency, post_queue, preview, telegram_post
+from ..services import fx, idempotency, post_queue, preview, subscriptions, telegram_post
 from ..services.ai_describe import (
     AiGenerationError,
     AiNotConfigured,
@@ -486,6 +486,8 @@ async def patch_status(
     # при продаже — пометку «продано» в каждом, где вещь уже висит.
     if target == ItemStatus.LISTED:
         await _enqueue_publish(session, member.store_id, item_id, actor=user)
+        if fresh is not None:
+            await subscriptions.enqueue_notifications(session, member.store_id, fresh)
     elif target in SOLD_STATUSES:
         await _enqueue_mark_sold(session, member.store_id, item_id)
 

@@ -106,6 +106,8 @@ class Store(Base):
     bump_after_days: Mapped[int] = mapped_column(Integer, default=60)
     # Показывать пост в личке и ждать кнопки «Опубликовать».
     preview_before_post: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Приём подписок «сообщи, когда появится» от покупателей.
+    subscriptions_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -369,6 +371,7 @@ class JobKind(str, enum.Enum):
     MARK_SOLD = "MARK_SOLD"      # пометить существующий пост проданным
     EDIT_CAPTION = "EDIT_CAPTION"  # перерисовать подпись (сменилась цена и т.п.)
     BUMP = "BUMP"                # поднять зависшую вещь: удалить пост и дать заново
+    NOTIFY_SUB = "NOTIFY_SUB"    # уведомить подписчика о подходящей новинке
 
 
 class JobStatus(str, enum.Enum):
@@ -406,6 +409,10 @@ class PostJob(Base):
     channel_id: Mapped[str] = mapped_column(String(80))
     # Ссылка на канал: нужна, чтобы записать ItemPost после публикации.
     channel_uid: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    # Кому уведомление (для NOTIFY_SUB) — нужна для кнопки отписки.
+    sub_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True
     )
     # Плашка над подписью при перерисовке (например, «🔥 СКИДКА»).
@@ -480,4 +487,38 @@ class ItemPost(Base):
 
     __table_args__ = (
         UniqueConstraint("item_id", "channel_id", name="uq_post_item_channel"),
+    )
+
+
+class Subscription(Base):
+    """Подписка покупателя на появление подходящих вещей.
+
+    Подписчик может не быть пользователем системы — он просто человек из
+    канала, поэтому храним telegram_id, а не ссылку на users.
+    Пустой фильтр означает «любой»: подписка только на бренд ловит все
+    размеры этого бренда.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    brand: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    size: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    max_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = _created()
+    last_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_sub_store_active", "store_id", "active"),
     )

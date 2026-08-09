@@ -80,6 +80,7 @@ const watermarkText = ref('')
 const bumpEnabled = ref(false)
 const bumpAfterDays = ref(60)
 const previewBefore = ref(false)
+const subsEnabled = ref(false)
 
 async function loadChannel(): Promise<void> {
   try {
@@ -92,6 +93,7 @@ async function loadChannel(): Promise<void> {
     bumpEnabled.value = ch.bump_enabled
     bumpAfterDays.value = ch.bump_after_days
     previewBefore.value = ch.preview_before_post
+    subsEnabled.value = ch.subscriptions_enabled
   } catch {
     /* игнор — просто пусто */
   }
@@ -109,6 +111,7 @@ async function saveChannel(): Promise<void> {
       bump_enabled: bumpEnabled.value,
       bump_after_days: bumpAfterDays.value,
       preview_before_post: previewBefore.value,
+      subscriptions_enabled: subsEnabled.value,
     })
     toast.success('Сохранено')
   } catch (e) {
@@ -340,6 +343,17 @@ function exportCsv(): void {
           placeholder="@ваш_канал (пусто — возьмём подпись выше)"
           autocomplete="off"
         />
+
+        <label class="wm-row">
+          <span class="wm-main">
+            <span class="wm-title">Подписки покупателей</span>
+            <span class="wm-sub">
+              Под карточкой вещи появится «Ждать похожее». Бот сам сообщит
+              подписчику, когда выставите подходящее — не чаще раза в час.
+            </span>
+          </span>
+          <input v-model="subsEnabled" type="checkbox" class="wm-check" />
+        </label>
 
         <label class="wm-row">
           <span class="wm-main">

@@ -7,7 +7,7 @@ from contextlib import suppress
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BufferedInputFile,
     MessageReactionCountUpdated,
@@ -26,6 +26,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import (
     Channel,
+    Subscription,
     InviteStatus,
     Item,
     ItemPost,
@@ -39,7 +40,7 @@ from .models import (
     StoreMember,
     User,
 )
-from .services import ai_template, post_template, preview, template_capture
+from .services import ai_template, post_template, preview, subscriptions, template_capture
 from .services.ai_describe import AiGenerationError, AiNotConfigured
 from .services.fsm import SOLD_STATUSES
 
@@ -223,6 +224,8 @@ async def cmd_start_item_card(message: Message, command: CommandObject):
             ),
         )
         photos = list(item.photo_file_ids or [])
+        subs_on = bool(store and store.subscriptions_enabled)
+        kb = _card_kb(item.id) if subs_on else _webapp_kb()
 
     if sold:
         caption = "✅ <b>ПРОДАНО</b>\n\n" + caption
@@ -234,10 +237,22 @@ async def cmd_start_item_card(message: Message, command: CommandObject):
                 BufferedInputFile(data, filename="item.jpg"),
                 caption=caption[:1024],
                 parse_mode="HTML",
-                reply_markup=_webapp_kb(),
+                reply_markup=kb,
             )
             return
-    await message.answer(caption[:4096], parse_mode="HTML", reply_markup=_webapp_kb())
+    await message.answer(caption[:4096], parse_mode="HTML", reply_markup=kb)
+
+
+def _card_kb(item_id) -> InlineKeyboardMarkup:
+    """Карточка вещи: открыть склад + подписаться на похожее."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🧥 Открыть склад",
+                                  web_app=WebAppInfo(url=settings.webapp_url))],
+            [InlineKeyboardButton(text="🔔 Ждать похожее",
+                                  callback_data=f"sub:{item_id}")],
+        ]
+    )
 
 
 def _read_local_photo(entry: str) -> bytes | None:
@@ -358,6 +373,107 @@ async def on_preview_decision(cq: CallbackQuery):
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=None)
         await cq.message.reply(note)
+
+
+@dp.callback_query(F.data.startswith("sub:"))
+async def on_subscribe(cq: CallbackQuery):
+    """Кнопка «Ждать похожее»: подписка по бренду и размеру этой вещи."""
+    try:
+        item_id = uuid.UUID((cq.data or "")[4:])
+    except ValueError:
+        await cq.answer("Некорректная кнопка")
+        return
+    async with SessionLocal() as s:
+        item = (await s.execute(select(Item).where(Item.id == item_id))).scalar_one_or_none()
+        if item is None:
+            await cq.answer("Вещь больше не доступна", show_alert=True)
+            return
+        store = (await s.execute(select(Store).where(Store.id == item.store_id))).scalar_one()
+        if not store.subscriptions_enabled:
+            await cq.answer("Подписки сейчас отключены", show_alert=True)
+            return
+        # Повторное нажатие не плодит дубли — оживляем прежнюю подписку.
+        existing = (
+            await s.execute(
+                select(Subscription).where(
+                    Subscription.store_id == store.id,
+                    Subscription.telegram_id == cq.from_user.id,
+                    Subscription.brand == item.brand,
+                    Subscription.size == item.size,
+                )
+            )
+        ).scalars().first()
+        if existing is not None:
+            if existing.active:
+                await cq.answer("Вы уже подписаны на такие вещи")
+                return
+            existing.active = True
+            sub = existing
+        else:
+            sub = Subscription(
+                store_id=store.id,
+                telegram_id=cq.from_user.id,
+                username=cq.from_user.username,
+                brand=item.brand,
+                size=item.size,
+            )
+            s.add(sub)
+        await s.commit()
+        text = subscriptions.describe(sub)
+    await cq.answer("Подписка оформлена")
+    await cq.message.answer(
+        f"🔔 Буду сообщать, когда появится: <b>{post_template.esc(text)}</b>\n\n"
+        "Список подписок — команда /подписки",
+        parse_mode="HTML",
+    )
+
+
+@dp.callback_query(F.data.startswith(f"{preview.UNSUB}:"))
+async def on_unsubscribe(cq: CallbackQuery):
+    """Отписка — кнопка под уведомлением или в списке подписок."""
+    try:
+        sub_id = uuid.UUID((cq.data or "").split(":", 1)[1])
+    except (ValueError, IndexError):
+        await cq.answer("Некорректная кнопка")
+        return
+    async with SessionLocal() as s:
+        sub = (await s.execute(select(Subscription).where(Subscription.id == sub_id))).scalar_one_or_none()
+        if sub is None or sub.telegram_id != cq.from_user.id:
+            await cq.answer("Подписка не найдена")
+            return
+        sub.active = False
+        await s.commit()
+    await cq.answer("Отписал")
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=None)
+
+
+@dp.message(Command("подписки", "subs", "subscriptions"))
+async def cmd_subs(message: Message):
+    """Список активных подписок с кнопками отписки."""
+    async with SessionLocal() as s:
+        subs = (
+            await s.execute(
+                select(Subscription).where(
+                    Subscription.telegram_id == message.from_user.id,
+                    Subscription.active.is_(True),
+                )
+            )
+        ).scalars().all()
+        rows = [(x.id, subscriptions.describe(x)) for x in subs]
+    if not rows:
+        await message.answer(
+            "У вас нет подписок. Откройте карточку вещи из канала и нажмите "
+            "«Ждать похожее»."
+        )
+        return
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"🔕 {t}", callback_data=f"{preview.UNSUB}:{i}")]
+            for i, t in rows
+        ]
+    )
+    await message.answer("Ваши подписки — нажмите, чтобы отписаться:", reply_markup=kb)
 
 
 @dp.message_reaction_count()

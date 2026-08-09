@@ -97,3 +97,61 @@ async def send_preview(
     except Exception as e:  # noqa: BLE001
         log.warning("preview error: %s", e)
         return False
+
+
+UNSUB = "unsub"
+
+
+async def notify_subscriber(
+    chat_id: int,
+    sub_id,
+    post: dict,
+    signature: str | None,
+    template_body: str | None,
+) -> bool:
+    """Шлёт подписчику новинку. False — доставить не удалось (бот заблокирован)."""
+    from .telegram_post import build_caption, item_link
+
+    link = await item_link(post["id"]) if post.get("id") else None
+    caption = "🔔 <b>Появилось по вашей подписке</b>\n\n" + build_caption(
+        post, signature, template_body, link
+    )
+    kb = {
+        "inline_keyboard": [
+            [{"text": "🔕 Отписаться", "callback_data": f"{UNSUB}:{sub_id}"}]
+        ]
+    }
+    photos = post.get("photo_file_ids") or []
+    entry = photos[0] if photos else None
+    try:
+        async with httpx.AsyncClient(timeout=40) as client:
+            if entry and entry.startswith(LOCAL_PREFIX):
+                data = _load_local(entry)
+                if data is not None:
+                    r = await client.post(
+                        f"{API}/sendPhoto",
+                        data={
+                            "chat_id": chat_id,
+                            "caption": caption[:1024],
+                            "parse_mode": "HTML",
+                            "reply_markup": __import__("json").dumps(kb),
+                        },
+                        files={"photo": ("item.jpg", data)},
+                    )
+                    return bool(r.json().get("ok"))
+            r = await client.post(
+                f"{API}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": caption[:4096],
+                    "parse_mode": "HTML",
+                    "reply_markup": kb,
+                },
+            )
+            data = r.json()
+            if not data.get("ok"):
+                log.info("подписчику %s не доставлено: %s", chat_id, data.get("description"))
+            return bool(data.get("ok"))
+    except Exception as e:  # noqa: BLE001
+        log.warning("notify error: %s", e)
+        return False

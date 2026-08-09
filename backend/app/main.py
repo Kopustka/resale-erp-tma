@@ -32,6 +32,8 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE items ADD COLUMN IF NOT EXISTS bumped_at TIMESTAMPTZ",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS preview_before_post BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS reactions INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS subscriptions_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS sub_id UUID",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые
@@ -40,6 +42,7 @@ _ENSURE_COLUMNS = (
 _ENSURE_ENUM_VALUES = (
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'EDIT_CAPTION'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'BUMP'",
+    "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'NOTIFY_SUB'",
     "ALTER TYPE job_status_enum ADD VALUE IF NOT EXISTS 'AWAITING'",
 )
 

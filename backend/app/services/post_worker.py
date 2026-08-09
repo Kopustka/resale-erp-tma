@@ -169,6 +169,30 @@ async def _run_job(job: PostJob) -> None:
                 )
                 await session.commit()
 
+            elif job.kind == JobKind.NOTIFY_SUB:
+                from .preview import notify_subscriber
+
+                await _respect_rate_limit(job.channel_id)
+                delivered = await notify_subscriber(
+                    int(job.channel_id),
+                    job.sub_id,
+                    ctx["post"],
+                    ctx["signature"],
+                    ctx["template"],
+                )
+                if not delivered:
+                    # Бот заблокирован или чат недоступен — подписка мертва,
+                    # гасим её, чтобы не долбиться в неё при каждой новинке.
+                    from ..models import Subscription
+
+                    await session.execute(
+                        update(Subscription)
+                        .where(Subscription.id == job.sub_id)
+                        .values(active=False)
+                        .execution_options(synchronize_session=False)
+                    )
+                    await session.commit()
+
             elif job.kind == JobKind.MARK_SOLD:
                 message_id = job.message_id
                 if message_id is None:

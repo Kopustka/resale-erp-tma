@@ -154,6 +154,7 @@ async def get_channel(
         bump_enabled=store.bump_enabled,
         bump_after_days=store.bump_after_days,
         preview_before_post=store.preview_before_post,
+        subscriptions_enabled=store.subscriptions_enabled,
     )
 
 
@@ -185,6 +186,8 @@ async def set_channel(
         store.bump_after_days = payload.bump_after_days
     if payload.preview_before_post is not None:
         store.preview_before_post = payload.preview_before_post
+    if payload.subscriptions_enabled is not None:
+        store.subscriptions_enabled = payload.subscriptions_enabled
 
     # Совместимость: постинг работает по таблице channels, а этот старый
     # эндпоинт правит поля склада. Держим их согласованными, иначе смена
@@ -216,6 +219,7 @@ async def set_channel(
         bump_enabled=store.bump_enabled,
         bump_after_days=store.bump_after_days,
         preview_before_post=store.preview_before_post,
+        subscriptions_enabled=store.subscriptions_enabled,
     )
 
 
