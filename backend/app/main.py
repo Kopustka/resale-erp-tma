@@ -26,6 +26,14 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_text VARCHAR(60)",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS channel_uid UUID",
+    "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS caption_prefix VARCHAR(64)",
+)
+
+# Значения enum'ов: create_all создаёт тип при первом запуске, но новые
+# значения в существующий не добавляет. ALTER TYPE ... ADD VALUE нельзя
+# выполнять внутри транзакции, поэтому эти идут отдельно, в автокоммите.
+_ENSURE_ENUM_VALUES = (
+    "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'EDIT_CAPTION'",
 )
 
 # Перенос на мультиканальность. Оба шага идемпотентны (NOT EXISTS + ON CONFLICT),
@@ -62,6 +70,11 @@ async def lifespan(app: FastAPI):
             await conn.execute(text(stmt))
         for stmt in _BACKFILL:
             await conn.execute(text(stmt))
+
+    async with engine.connect() as conn:
+        auto = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        for stmt in _ENSURE_ENUM_VALUES:
+            await auto.execute(text(stmt))
 
     from .services.post_worker import run_forever
 

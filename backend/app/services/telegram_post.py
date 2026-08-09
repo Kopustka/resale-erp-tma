@@ -150,6 +150,51 @@ def _msg_id(r: httpx.Response, group: bool = False) -> int | None:
     return res["message_id"]
 
 
+async def edit_caption(
+    channel_id: str,
+    message_id: int,
+    item: dict,
+    signature: str | None = None,
+    template_body: str | None = None,
+    prefix: str = "",
+) -> None:
+    """Перерисовывает подпись поста. prefix — плашка сверху (ПРОДАНО, СКИДКА).
+
+    У поста без фото подписи нет — там правится текст сообщения, иначе
+    Bot API отвечает «there is no caption in the message to edit».
+    """
+    body = build_caption(item, signature, template_body)
+    text = (prefix + body)[:1024] if prefix else body[:1024]
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(
+            f"{API}/editMessageCaption",
+            json={
+                "chat_id": channel_id,
+                "message_id": message_id,
+                "caption": text,
+                "parse_mode": "HTML",
+            },
+        )
+        data = r.json()
+        if not data.get("ok") and "no caption" in str(data.get("description", "")).lower():
+            r = await client.post(
+                f"{API}/editMessageText",
+                json={
+                    "chat_id": channel_id,
+                    "message_id": message_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                },
+            )
+            data = r.json()
+    if not data.get("ok"):
+        desc = str(data.get("description", ""))
+        # Текст не изменился — Telegram считает это ошибкой, для нас это норма.
+        if "not modified" in desc.lower():
+            return
+        raise ChannelError(desc or f"HTTP {r.status_code}")
+
+
 async def mark_sold(
     channel_id: str,
     message_id: int,
@@ -157,21 +202,11 @@ async def mark_sold(
     signature: str | None = None,
     template_body: str | None = None,
 ) -> None:
-    """Добавляет к посту пометку ПРОДАНО (editMessageCaption)."""
-    caption = "✅ <b>ПРОДАНО</b>\n\n" + build_caption(item, signature, template_body)
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(
-            f"{API}/editMessageCaption",
-            json={
-                "chat_id": channel_id,
-                "message_id": message_id,
-                "caption": caption[:1024],
-                "parse_mode": "HTML",
-            },
-        )
-    data = r.json()
-    if not data.get("ok"):
-        log.warning("mark_sold failed: %s", data.get("description"))
+    """Добавляет к посту пометку ПРОДАНО."""
+    await edit_caption(
+        channel_id, message_id, item, signature, template_body,
+        prefix="✅ <b>ПРОДАНО</b>\n\n",
+    )
 
 
 async def send_test(channel_id: str) -> None:

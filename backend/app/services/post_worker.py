@@ -110,6 +110,20 @@ async def _run_job(job: PostJob) -> None:
                     )
                     await session.commit()
 
+            elif job.kind == JobKind.EDIT_CAPTION:
+                if job.message_id is None:
+                    await post_queue.mark_done(session, job.id)
+                    return
+                await _respect_rate_limit(job.channel_id)
+                await telegram_post.edit_caption(
+                    job.channel_id,
+                    job.message_id,
+                    ctx["post"],
+                    ctx["signature"],
+                    ctx["template"],
+                    prefix=job.caption_prefix or "",
+                )
+
             elif job.kind == JobKind.MARK_SOLD:
                 message_id = job.message_id
                 if message_id is None:

@@ -358,6 +358,7 @@ class PostTemplate(Base):
 class JobKind(str, enum.Enum):
     POST_ITEM = "POST_ITEM"      # опубликовать вещь в канал
     MARK_SOLD = "MARK_SOLD"      # пометить существующий пост проданным
+    EDIT_CAPTION = "EDIT_CAPTION"  # перерисовать подпись (сменилась цена и т.п.)
 
 
 class JobStatus(str, enum.Enum):
@@ -395,7 +396,9 @@ class PostJob(Base):
     channel_uid: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True
     )
-    # Для MARK_SOLD — какой пост править.
+    # Плашка над подписью при перерисовке (например, «🔥 СКИДКА»).
+    caption_prefix: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Для MARK_SOLD / EDIT_CAPTION — какой пост править.
     message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     attempts: Mapped[int] = mapped_column(Integer, default=0)

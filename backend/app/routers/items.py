@@ -258,10 +258,18 @@ async def edit_item(
                 data.pop(k, None)
             data.update(await _build_money(money_in, base))
 
+    price_before = item.list_price_orig
     if data:
         await repo.update_fields(item, data)
         await session.commit()
     fresh = await repo.get(member.store_id, item_id, include_archived=True)
+
+    # Цена в объявлении изменилась — перерисовываем уже опубликованные посты,
+    # чтобы в канале не висел старый ценник.
+    if "list_price_orig" in data and fresh.list_price_orig != price_before:
+        await _enqueue_price_edit(session, member.store_id, item_id,
+                                  price_before, fresh.list_price_orig)
+
     return to_out(fresh, show_finance=_can_see_finance(member))
 
 
@@ -549,6 +557,38 @@ async def _enqueue_publish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> 
         added = True
     if added:
         await session.commit()
+
+
+async def _enqueue_price_edit(
+    session, store_id: uuid.UUID, item_id: uuid.UUID, before, after
+) -> None:
+    """Перерисовывает подпись во всех каналах, где вещь ещё висит непроданной."""
+    rows = (
+        await session.execute(
+            select(ItemPost, Channel)
+            .join(Channel, Channel.id == ItemPost.channel_id)
+            .where(ItemPost.item_id == item_id, ItemPost.sold_marked.is_(False))
+        )
+    ).all()
+    if not rows:
+        return
+    # Цену снизили — вешаем плашку скидки, это заметно поднимает отклик.
+    prefix = None
+    if before is not None and after is not None and after < before:
+        pct = int(round((1 - float(after) / float(before)) * 100))
+        prefix = f"🔥 <b>СКИДКА −{pct}%</b>\n\n" if pct >= 1 else None
+    for post, ch in rows:
+        await post_queue.enqueue(
+            session,
+            store_id=store_id,
+            kind=JobKind.EDIT_CAPTION,
+            channel_id=ch.chat_id,
+            channel_uid=ch.id,
+            item_id=item_id,
+            message_id=post.message_id,
+            caption_prefix=prefix,
+        )
+    await session.commit()
 
 
 async def _enqueue_mark_sold(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:
