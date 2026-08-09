@@ -1,17 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { openTemplates } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
+import { useTemplatesStore } from '@/stores/templates'
 import { useToastStore } from '@/stores/toast'
-import { CURRENCIES, type Currency, type Role } from '@/shared/api/types'
+import { CURRENCIES, CURRENCY_SYMBOLS, type Currency, type Role } from '@/shared/api/types'
 import { storesApi } from '@/shared/api/endpoints'
 import { hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
 const items = useItemsStore()
 const analytics = useAnalyticsStore()
+const templates = useTemplatesStore()
 const toast = useToastStore()
+
+/** Подпись под строкой перехода: какой шаблон сейчас используется. */
+const activeTemplateName = computed(() => {
+  if (templates.loading && !templates.list.length) return 'Загрузка…'
+  return templates.activeTemplate?.name ?? 'Стандартное оформление'
+})
+
+function goTemplates(): void {
+  hapticSelection()
+  openTemplates()
+}
 
 const ROLE_LABELS: Record<Role, string> = {
   OWNER: 'Владелец',
@@ -95,6 +109,7 @@ onMounted(() => {
   if (session.isOwner) {
     void session.fetchMembers()
     void loadChannel()
+    void templates.fetch()
     void storesApi.getSettings().then((s) => (baseCurrency.value = s.base_currency))
   }
 })
@@ -247,6 +262,28 @@ function exportCsv(): void {
         </div>
       </section>
 
+      <!-- Основная валюта (только OWNER) -->
+      <section v-if="session.isOwner" class="block">
+        <h2 class="block-title">Основная валюта</h2>
+        <p class="hint channel-note">
+          Валюта учёта склада: в неё пересчитываются все суммы и аналитика.
+          Введённые цены сохраняются и в исходной валюте.
+        </p>
+        <div class="cur-row">
+          <button
+            v-for="cur in CURRENCIES"
+            :key="cur"
+            class="cur-opt tap"
+            :class="{ sel: cur === baseCurrency }"
+            :disabled="currencyBusy"
+            @click="changeBaseCurrency(cur)"
+          >
+            <span class="cur-code">{{ cur }}</span>
+            <span class="cur-sym">{{ CURRENCY_SYMBOLS[cur] }}</span>
+          </button>
+        </div>
+      </section>
+
       <!-- Автопостинг в канал (только OWNER) -->
       <section v-if="session.isOwner" class="block">
         <h2 class="block-title">Автопостинг в Telegram-канал</h2>
@@ -281,6 +318,14 @@ function exportCsv(): void {
             <div>Как узнать ID приватного: добавьте бота в канал — он пришлёт вам ID в личку.</div>
           </div>
         </div>
+
+        <button class="nav-row tap" @click="goTemplates">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Шаблоны постов</span>
+            <span class="nav-row-sub">{{ activeTemplateName }}</span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">›</span>
+        </button>
       </section>
 
       <!-- Экспорт -->
@@ -503,5 +548,68 @@ function exportCsv(): void {
 }
 .bottom-pad {
   height: 16px;
+}
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  text-align: left;
+}
+.nav-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-row-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tg-theme-text-color);
+}
+.nav-row-sub {
+  font-size: 12px;
+  color: var(--tg-theme-hint-color);
+}
+.nav-row-chevron {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--tg-theme-hint-color);
+}
+.cur-row {
+  display: flex;
+  gap: var(--gap);
+}
+.cur-opt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--tap);
+  padding: 8px 4px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
+}
+.cur-opt.sel {
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+}
+.cur-opt:disabled {
+  opacity: 0.6;
+}
+.cur-code {
+  font-size: 14px;
+  font-weight: 700;
+}
+.cur-sym {
+  font-size: 12px;
+  opacity: 0.75;
 }
 </style>

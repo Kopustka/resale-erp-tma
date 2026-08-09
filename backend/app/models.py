@@ -13,6 +13,7 @@ from decimal import Decimal
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -320,3 +321,32 @@ class ItemStatusLog(Base):
         PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     created_at: Mapped[datetime] = _created()
+
+
+class PostTemplate(Base):
+    """Шаблон подписи поста для автопостинга в канал.
+
+    Активный шаблон помечен is_default (ровно один на склад). Флаг живёт
+    здесь, а не колонкой в stores, потому что схема поднимается через
+    Base.metadata.create_all: он создаёт новые таблицы, но не добавляет
+    колонки в существующие — новой таблицей миграция не нужна.
+    """
+
+    __tablename__ = "post_templates"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(60))
+    # Тело с плейсхолдерами {title}, {price}… Может содержать HTML-разметку Telegram.
+    body: Mapped[str] = mapped_column(Text)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Исходный пример поста, с которого нейросеть склонировала дизайн (если клонировали).
+    source_sample: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+    __table_args__ = (
+        Index("ix_tpl_store_default", "store_id", "is_default"),
+    )

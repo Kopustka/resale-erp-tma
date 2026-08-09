@@ -141,6 +141,36 @@ export function initTelegram(): void {
   }
 }
 
+// --------------------------------- Ссылки --------------------------------- //
+
+/**
+ * Открыть ссылку на Telegram (t.me/…): внутри мини-аппа — нативным методом
+ * (клиент сам свернёт приложение и перейдёт в чат), вне Telegram или на старых
+ * клиентах — обычной вкладкой браузера.
+ */
+export function openTelegramLink(url: string): void {
+  if (!url) return
+  const tg = getWebApp()
+  const isTme = /^https:\/\/(t\.me|telegram\.me)\//i.test(url)
+  if (tg?.openTelegramLink && isTme) {
+    try {
+      tg.openTelegramLink(url)
+      return
+    } catch {
+      /* старый клиент — уходим в фолбэк */
+    }
+  }
+  if (tg?.openLink && !isTme) {
+    try {
+      tg.openLink(url)
+      return
+    } catch {
+      /* фолбэк ниже */
+    }
+  }
+  window.open(url, '_blank', 'noopener')
+}
+
 // --------------------------------- Haptics --------------------------------- //
 
 export function hapticImpact(style: HapticImpactStyle = 'light'): void {

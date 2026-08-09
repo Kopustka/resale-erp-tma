@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import CAN_EDIT, get_active_membership, get_current_user
 from ..db import SessionLocal, get_session
-from ..models import Item, ItemStatus, Role, Store, StoreMember, User
+from ..models import Item, ItemStatus, PostTemplate, Role, Store, StoreMember, User
 from ..repositories.items import ItemRepository
 from ..config import get_settings
 from ..schemas import (
@@ -483,7 +483,12 @@ def _item_to_post_dict(it: Item) -> dict:
     return {
         "title": it.title,
         "description": it.description,
+        "brand": it.brand,
+        "category": it.category,
         "size": it.size,
+        "color": it.color,
+        "condition": it.condition,
+        "sku": it.sku,
         "length_cm": it.length_cm,
         "width_cm": it.width_cm,
         "sleeve_cm": it.sleeve_cm,
@@ -491,6 +496,17 @@ def _item_to_post_dict(it: Item) -> dict:
         "price_currency": it.price_currency,
         "photo_file_ids": list(it.photo_file_ids or []),
     }
+
+
+async def _default_template_body(session, store_id: uuid.UUID) -> str | None:
+    """Тело активного шаблона склада. None — встроенное оформление."""
+    return (
+        await session.execute(
+            select(PostTemplate.body).where(
+                PostTemplate.store_id == store_id, PostTemplate.is_default.is_(True)
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def _bg_post_to_channel(channel_id: str, item_id: uuid.UUID, signature: str | None) -> None:
@@ -501,7 +517,8 @@ async def _bg_post_to_channel(channel_id: str, item_id: uuid.UUID, signature: st
             if it is None or it.channel_message_id is not None:
                 return
             post = _item_to_post_dict(it)
-        msg_id = await telegram_post.post_item(channel_id, post, signature)
+            tpl = await _default_template_body(s, it.store_id)
+        msg_id = await telegram_post.post_item(channel_id, post, signature, tpl)
         if msg_id is not None:
             async with SessionLocal() as s:
                 await s.execute(
@@ -524,7 +541,8 @@ async def _bg_mark_sold(
             if it is None:
                 return
             post = _item_to_post_dict(it)
-        await telegram_post.mark_sold(channel_id, message_id, post, signature)
+            tpl = await _default_template_body(s, it.store_id)
+        await telegram_post.mark_sold(channel_id, message_id, post, signature, tpl)
     except Exception as e:  # noqa: BLE001
         logging.getLogger("channel").warning("mark_sold %s failed: %s", item_id, e)
 

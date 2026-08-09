@@ -9,6 +9,7 @@ import BiScreen from '@/screens/BiScreen.vue'
 import SettingsScreen from '@/screens/SettingsScreen.vue'
 import CreateScreen from '@/screens/CreateScreen.vue'
 import ItemDetail from '@/screens/ItemDetail.vue'
+import TemplatesScreen from '@/screens/TemplatesScreen.vue'
 
 const session = useSessionStore()
 
@@ -46,6 +47,8 @@ onMounted(() => {
     <CreateScreen v-if="nav.overlay === 'create'" />
     <!-- Оверлей детали/редактирования -->
     <ItemDetail v-if="nav.overlay === 'detail'" />
+    <!-- Оверлей шаблонов постов (только OWNER) -->
+    <TemplatesScreen v-if="nav.overlay === 'templates'" />
 
     <ToastHost />
   </div>

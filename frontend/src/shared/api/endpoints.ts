@@ -3,6 +3,8 @@ import { http, uploadFile } from './http'
 import type {
   AiDescribeResult,
   AnalyticsSummary,
+  CaptureSession,
+  CaptureStatus,
   Currency,
   InviteOut,
   ItemCreate,
@@ -11,10 +13,12 @@ import type {
   ItemPage,
   ItemUpdate,
   MemberOut,
+  PostTemplate,
   Role,
   StatusPatch,
   StoreOut,
   SwitchStoreResult,
+  TemplatePlaceholder,
   VoiceParseResult,
 } from './types'
 
@@ -105,6 +109,35 @@ export const mediaApi = {
   /** Загрузка фото из галереи/камеры → { photo_id: "local:<name>" }. */
   upload: (file: File, signal?: AbortSignal) =>
     uploadFile<{ photo_id: string }>(`${V1}/media/upload`, file, signal),
+}
+
+// ---------------------------- Шаблоны постов ---------------------------- //
+export const templatesApi = {
+  list: () => http.get<PostTemplate[]>(`${V1}/templates`),
+
+  create: (name: string, body: string) =>
+    http.post<PostTemplate>(`${V1}/templates`, { name, body }),
+
+  update: (id: string, patch: { name?: string; body?: string }) =>
+    http.patch<PostTemplate>(`${V1}/templates/${id}`, patch),
+
+  remove: (id: string) => http.del<void>(`${V1}/templates/${id}`),
+
+  /** Сделать шаблон активным (снимает флаг с остальных). */
+  makeDefault: (id: string) => http.post<PostTemplate>(`${V1}/templates/${id}/default`),
+
+  placeholders: () => http.get<TemplatePlaceholder[]>(`${V1}/templates/placeholders`),
+
+  /** Рендер тела шаблона на демо-данных → HTML-подпись поста. */
+  preview: (body: string) => http.post<{ caption: string }>(`${V1}/templates/preview`, { body }),
+
+  /** Старт сессии «скопировать дизайн из поста». */
+  startCapture: () => http.post<CaptureSession>(`${V1}/templates/capture`),
+
+  captureStatus: (token: string) => http.get<CaptureStatus>(`${V1}/templates/capture/${token}`),
+
+  /** Снять сессию на сервере, чтобы бот перестал ждать пример поста. */
+  cancelCapture: (token: string) => http.del<void>(`${V1}/templates/capture/${token}`),
 }
 
 // ------------------------------- Analytics ------------------------------- //

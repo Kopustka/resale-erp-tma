@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.dispatcher.event.bases import SkipHandler
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
     ChatMemberUpdated,
     InlineKeyboardButton,
@@ -13,17 +15,21 @@ from aiogram.types import (
     Message,
     WebAppInfo,
 )
+from aiogram.utils.text_decorations import html_decoration
 from sqlalchemy import select
 
 from .config import get_settings
 from .db import SessionLocal
 from .models import (
     InviteStatus,
+    PostTemplate,
     Store,
     StoreInvite,
     StoreMember,
     User,
 )
+from .services import ai_template, post_template, template_capture
+from .services.ai_describe import AiGenerationError, AiNotConfigured
 
 settings = get_settings()
 bot = Bot(token=settings.bot_token)
@@ -75,6 +81,94 @@ async def _activate_invites(session, user: User) -> int:
             activated += 1
         inv.status = InviteStatus.ACCEPTED
     return activated
+
+
+@dp.message(CommandStart(deep_link=True, magic=F.args.startswith("tpl_")))
+async def cmd_start_template_capture(message: Message, command: CommandObject):
+    """Deep link из мини-аппа: взводим сессию и ждём пример поста."""
+    token = (command.args or "")[len("tpl_"):]
+    session = await template_capture.arm(token)
+    if session is None or session["telegram_id"] != message.from_user.id:
+        await message.answer(
+            "Ссылка устарела. Откройте раздел «Шаблоны постов» и нажмите "
+            "«Скопировать дизайн из поста» ещё раз.",
+            reply_markup=_webapp_kb(),
+        )
+        return
+    await message.answer(
+        "🎨 <b>Копирование дизайна</b>\n\n"
+        "Пришлите пример поста, оформление которого вам нравится: "
+        "перешлите его из канала или отправьте текстом.\n\n"
+        "Я разберу структуру и соберу из неё шаблон — эмодзи, порядок строк "
+        "и разметка сохранятся, а данные вещи станут подставляемыми полями.",
+        parse_mode="HTML",
+    )
+
+
+def _sample_html(message: Message) -> str:
+    """Текст сообщения с сохранением форматирования (жирный, ссылки и т.д.)."""
+    text = message.text or message.caption or ""
+    entities = message.entities or message.caption_entities or []
+    if not text:
+        return ""
+    return html_decoration.unparse(text, entities)
+
+
+@dp.message((F.text & ~F.text.startswith("/")) | F.caption)
+async def on_template_sample(message: Message):
+    """Пример поста для клонирования дизайна — только при активной сессии."""
+    active = await template_capture.get_active_for_user(message.from_user.id)
+    if active is None:
+        raise SkipHandler  # обычное сообщение — пусть разбирают другие хендлеры
+    token, session = active
+    if session["status"] != template_capture.ARMED:
+        raise SkipHandler
+
+    sample = _sample_html(message)
+    if not sample.strip():
+        await message.answer("Не вижу текста в этом сообщении. Пришлите пост с текстом.")
+        return
+
+    note = await message.answer("⏳ Разбираю оформление…")
+    try:
+        result = await ai_template.clone_template_from_sample(sample)
+    except AiNotConfigured:
+        await template_capture.fail(token, "AI не настроен (нет GEMINI_API_KEY)")
+        await note.edit_text("❌ AI-генерация не настроена: не задан GEMINI_API_KEY.")
+        return
+    except AiGenerationError as e:
+        await template_capture.fail(token, str(e))
+        await note.edit_text(f"❌ Не получилось разобрать пост: {e}")
+        return
+
+    async with SessionLocal() as s:
+        store_id = uuid.UUID(session["store_id"])
+        has_any = (
+            await s.execute(
+                select(PostTemplate.id).where(PostTemplate.store_id == store_id).limit(1)
+            )
+        ).scalar_one_or_none()
+        tpl = PostTemplate(
+            store_id=store_id,
+            name=result["name"],
+            body=result["body"],
+            source_sample=sample[:4000],
+            is_default=has_any is None,
+        )
+        s.add(tpl)
+        await s.commit()
+        await s.refresh(tpl)
+        tpl_id, tpl_name = tpl.id, tpl.name
+
+    await template_capture.finish(token, tpl_id)
+
+    preview = post_template.render_demo(result["body"])
+    await note.edit_text(
+        f"✅ Шаблон «{post_template.esc(tpl_name)}» готов.\n\n"
+        "Вот как он будет выглядеть на примере вещи:",
+        parse_mode="HTML",
+    )
+    await message.answer(preview, parse_mode="HTML", reply_markup=_webapp_kb())
 
 
 @dp.message(CommandStart())
@@ -163,6 +257,14 @@ async def on_added_to_chat(event: ChatMemberUpdated):
 @dp.message(F.photo)
 async def on_photo(message: Message):
     """Приём фото: отдаём file_id, который фронт сохранит в товар."""
+    # Ждём пример поста, а пришло фото без подписи — подсказываем, а не молчим.
+    active = await template_capture.get_active_for_user(message.from_user.id)
+    if active is not None and active[1]["status"] == template_capture.ARMED:
+        await message.answer(
+            "В этом сообщении нет текста — копировать нечего. "
+            "Перешлите пост вместе с подписью или пришлите текст поста."
+        )
+        return
     file_id = message.photo[-1].file_id
     await message.answer(f"Фото получено. file_id:\n`{file_id}`", parse_mode="Markdown")
 

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import analytics, items, media, stores
+from .routers import analytics, items, media, stores, templates
 
 settings = get_settings()
 
@@ -49,3 +49,4 @@ app.include_router(items.router)
 app.include_router(analytics.router)
 app.include_router(stores.router)
 app.include_router(media.router)
+app.include_router(templates.router)

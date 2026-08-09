@@ -189,6 +189,44 @@ export interface SwitchStoreResult {
   current_store_id: string
 }
 
+// --------------------------- Шаблоны постов --------------------------- //
+
+/** Шаблон подписи для автопостинга в канал. */
+export interface PostTemplate {
+  id: string
+  name: string
+  body: string
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Доступный плейсхолдер шаблона. key — без фигурных скобок (напр. "title"). */
+export interface TemplatePlaceholder {
+  key: string
+  label: string
+  example: string
+}
+
+/** Сессия «скопировать дизайн из поста»: ссылка в чат с ботом + токен для поллинга. */
+export interface CaptureSession {
+  token: string
+  deep_link: string
+  expires_in: number
+}
+
+/**
+ * waiting — сессия создана, юзер ещё не открыл чат с ботом;
+ * armed   — бот принял deep link и ждёт пример поста.
+ */
+export type CaptureState = 'waiting' | 'armed' | 'done' | 'expired' | 'error'
+
+export interface CaptureStatus {
+  status: CaptureState
+  template_id: string | null
+  error: string | null
+}
+
 /** Поля фильтров списка склада. */
 export interface ItemFilters {
   status?: ItemStatus | null

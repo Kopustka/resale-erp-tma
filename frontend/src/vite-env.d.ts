@@ -70,6 +70,9 @@ interface TelegramWebApp {
   close(): void
   setHeaderColor?(color: string): void
   setBackgroundColor?(color: string): void
+  /** Открывает t.me-ссылку внутри Telegram (мини-апп при этом сворачивается). */
+  openTelegramLink?(url: string): void
+  openLink?(url: string, options?: { try_instant_view?: boolean }): void
   onEvent(event: string, cb: () => void): void
   offEvent(event: string, cb: () => void): void
 }

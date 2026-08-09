@@ -25,55 +25,37 @@ class ChannelError(Exception):
     pass
 
 
-def _fmt_num(v) -> str:
-    if v is None:
-        return ""
-    f = float(v)
-    return str(int(f)) if f == int(f) else str(f)
+_bot_username: str | None = None
 
 
-def build_caption(item: dict, signature: str | None = None) -> str:
-    """Собирает подпись поста: название, описание, цена, замеры, контакт."""
-    from .fx import symbol as cur_symbol
-
-    lines: list[str] = []
-    title = (item.get("title") or "").strip()
-    if title:
-        lines.append(f"<b>{_esc(title)}</b>")
-    descr = (item.get("description") or "").strip()
-    if descr:
-        lines.append("")
-        lines.append(_esc(descr))
-
-    tail: list[str] = []
-    price = item.get("price")
-    if price is not None:
-        sym = cur_symbol(item.get("price_currency") or "BYN")
-        tail.append(f"💰 {_fmt_num(price)} {sym}")
-    else:
-        tail.append("💬 Цена — в личные сообщения")
-
-    meas = []
-    for label, key in (("Длина", "length_cm"), ("Ширина", "width_cm"), ("Рукав", "sleeve_cm")):
-        val = _fmt_num(item.get(key))
-        if val:
-            meas.append(f"{label} {val}")
-    if meas:
-        tail.append("📐 " + " · ".join(meas))
-
-    if tail:
-        lines.append("")
-        lines.extend(tail)
-
-    sig = (signature or "").strip()
-    if sig:
-        lines.append("")
-        lines.append(_esc(sig))
-    return "\n".join(lines)[:1024]
+async def get_bot_username() -> str | None:
+    """@username бота — нужен для deep link из мини-аппа. Кэшируется."""
+    global _bot_username
+    if _bot_username is not None:
+        return _bot_username
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(f"{API}/getMe")
+        data = r.json()
+        if data.get("ok"):
+            _bot_username = data["result"].get("username")
+    except Exception as e:  # noqa: BLE001
+        log.warning("getMe failed: %s", e)
+    return _bot_username
 
 
-def _esc(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def build_caption(
+    item: dict, signature: str | None = None, template_body: str | None = None
+) -> str:
+    """Собирает подпись поста по шаблону склада.
+
+    template_body=None — встроенное оформление (совпадает с тем, что было
+    захардкожено до появления шаблонов).
+    """
+    from . import post_template as pt
+
+    body = template_body or pt.DEFAULT_TEMPLATE_BODY
+    return pt.render(body, pt.build_context(item, signature))
 
 
 def _load_local(entry: str) -> bytes | None:
@@ -84,9 +66,14 @@ def _load_local(entry: str) -> bytes | None:
     return p.read_bytes() if p.exists() else None
 
 
-async def post_item(channel_id: str, item: dict, signature: str | None = None) -> int | None:
+async def post_item(
+    channel_id: str,
+    item: dict,
+    signature: str | None = None,
+    template_body: str | None = None,
+) -> int | None:
     """Публикует вещь. Возвращает message_id первого сообщения или None."""
-    caption = build_caption(item, signature)
+    caption = build_caption(item, signature, template_body)
     photos: list[str] = item.get("photo_file_ids") or []
 
     async with httpx.AsyncClient(timeout=40) as client:
@@ -154,9 +141,15 @@ def _msg_id(r: httpx.Response, group: bool = False) -> int | None:
     return res["message_id"]
 
 
-async def mark_sold(channel_id: str, message_id: int, item: dict, signature: str | None = None) -> None:
+async def mark_sold(
+    channel_id: str,
+    message_id: int,
+    item: dict,
+    signature: str | None = None,
+    template_body: str | None = None,
+) -> None:
     """Добавляет к посту пометку ПРОДАНО (editMessageCaption)."""
-    caption = "✅ <b>ПРОДАНО</b>\n\n" + build_caption(item, signature)
+    caption = "✅ <b>ПРОДАНО</b>\n\n" + build_caption(item, signature, template_body)
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(
             f"{API}/editMessageCaption",

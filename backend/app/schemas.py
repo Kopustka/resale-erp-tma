@@ -228,3 +228,51 @@ class StoreSettings(BaseModel):
 class FxRates(BaseModel):
     base: str
     rates: dict[str, float]  # сколько base стоит 1 единица валюты
+
+
+# --------------------------- Шаблоны постов --------------------------- #
+class PostTemplateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    body: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PostTemplateCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+    body: str = Field(..., min_length=1)
+
+
+class PostTemplateUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=60)
+    body: str | None = Field(None, min_length=1)
+
+
+class TemplatePlaceholder(BaseModel):
+    key: str
+    label: str
+    example: str
+
+
+class TemplatePreviewIn(BaseModel):
+    body: str = Field(..., min_length=1)
+
+
+class TemplatePreviewOut(BaseModel):
+    caption: str
+
+
+class CaptureSessionOut(BaseModel):
+    token: str
+    deep_link: str
+    expires_in: int
+
+
+class CaptureStatusOut(BaseModel):
+    status: str  # waiting | armed | done | expired | error
+    template_id: uuid.UUID | None = None
+    error: str | None = None
