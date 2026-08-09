@@ -63,13 +63,17 @@ const channelInput = ref('')
 const channelSignature = ref('')
 const channelSaved = ref<string | null>(null)
 const channelBusy = ref(false)
+const watermarkEnabled = ref(false)
+const watermarkText = ref('')
 
 async function loadChannel(): Promise<void> {
   try {
-    const { channel_id, channel_signature } = await storesApi.getChannel()
-    channelSaved.value = channel_id
-    channelInput.value = channel_id ?? ''
-    channelSignature.value = channel_signature ?? ''
+    const ch = await storesApi.getChannel()
+    channelSaved.value = ch.channel_id
+    channelInput.value = ch.channel_id ?? ''
+    channelSignature.value = ch.channel_signature ?? ''
+    watermarkEnabled.value = ch.watermark_enabled
+    watermarkText.value = ch.watermark_text ?? ''
   } catch {
     /* игнор — просто пусто */
   }
@@ -78,10 +82,12 @@ async function loadChannel(): Promise<void> {
 async function saveChannel(): Promise<void> {
   channelBusy.value = true
   try {
-    const { channel_id } = await storesApi.setChannel(
-      channelInput.value.trim() || null,
-      channelSignature.value.trim() || null,
-    )
+    const { channel_id } = await storesApi.setChannel({
+      channel_id: channelInput.value.trim() || null,
+      channel_signature: channelSignature.value.trim() || null,
+      watermark_enabled: watermarkEnabled.value,
+      watermark_text: watermarkText.value.trim() || null,
+    })
     channelSaved.value = channel_id
     channelInput.value = channel_id ?? ''
     toast.success(channel_id ? 'Канал сохранён' : 'Автопостинг выключен')
@@ -318,6 +324,24 @@ function exportCsv(): void {
             <div>Как узнать ID приватного: добавьте бота в канал — он пришлёт вам ID в личку.</div>
           </div>
         </div>
+
+        <label class="wm-row">
+          <span class="wm-main">
+            <span class="wm-title">Водяной знак на фото</span>
+            <span class="wm-sub">
+              Подпись в углу фото, уходящих в канал. Оригиналы в складе не меняются.
+            </span>
+          </span>
+          <input v-model="watermarkEnabled" type="checkbox" class="wm-check" />
+        </label>
+        <input
+          v-if="watermarkEnabled"
+          v-model="watermarkText"
+          class="field"
+          maxlength="60"
+          placeholder="@ваш_канал (пусто — возьмём подпись выше)"
+          autocomplete="off"
+        />
 
         <button class="nav-row tap" @click="goTemplates">
           <span class="nav-row-main">
@@ -611,5 +635,33 @@ function exportCsv(): void {
 .cur-sym {
   font-size: 12px;
   opacity: 0.75;
+}
+.wm-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tap);
+  margin-top: 14px;
+}
+.wm-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wm-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.wm-sub {
+  font-size: 12px;
+  color: var(--tg-theme-hint-color);
+  line-height: 1.4;
+}
+.wm-check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--tg-theme-button-color);
 }
 </style>

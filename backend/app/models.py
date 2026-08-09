@@ -98,6 +98,9 @@ class Store(Base):
     # Автопостинг: канал (@username или -100… id) и контакт-подпись под постами.
     channel_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     channel_signature: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Водяной знак на фото, уходящих в канал (оригиналы не меняются).
+    watermark_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    watermark_text: Mapped[str | None] = mapped_column(String(60), nullable=True)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 

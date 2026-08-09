@@ -498,6 +498,19 @@ def _item_to_post_dict(it: Item) -> dict:
     }
 
 
+async def _watermark_text(session, store_id: uuid.UUID) -> str | None:
+    """Текст водяного знака: своё поле, иначе подпись канала. None — знак выключен."""
+    row = (
+        await session.execute(
+            select(Store.watermark_enabled, Store.watermark_text, Store.channel_signature)
+            .where(Store.id == store_id)
+        )
+    ).first()
+    if row is None or not row[0]:
+        return None
+    return (row[1] or row[2] or "").strip() or None
+
+
 async def _default_template_body(session, store_id: uuid.UUID) -> str | None:
     """Тело активного шаблона склада. None — встроенное оформление."""
     return (
@@ -518,7 +531,8 @@ async def _bg_post_to_channel(channel_id: str, item_id: uuid.UUID, signature: st
                 return
             post = _item_to_post_dict(it)
             tpl = await _default_template_body(s, it.store_id)
-        msg_id = await telegram_post.post_item(channel_id, post, signature, tpl)
+            wm = await _watermark_text(s, it.store_id)
+        msg_id = await telegram_post.post_item(channel_id, post, signature, tpl, wm)
         if msg_id is not None:
             async with SessionLocal() as s:
                 await s.execute(

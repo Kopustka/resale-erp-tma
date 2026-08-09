@@ -5,6 +5,8 @@ import type {
   AnalyticsSummary,
   CaptureSession,
   CaptureStatus,
+  ChannelSettings,
+  ChannelUpdate,
   Currency,
   InviteOut,
   ItemCreate,
@@ -33,15 +35,9 @@ export const storesApi = {
   invite: (username: string, role: Exclude<Role, 'OWNER'>) =>
     http.post<InviteOut>(`${V1}/stores/invites`, { username, role }),
   revokeInvite: (inviteId: string) => http.del<void>(`${V1}/stores/invites/${inviteId}`),
-  getChannel: () =>
-    http.get<{ channel_id: string | null; channel_signature: string | null }>(
-      `${V1}/stores/channel`,
-    ),
-  setChannel: (channelId: string | null, signature: string | null) =>
-    http.patch<{ channel_id: string | null; channel_signature: string | null }>(
-      `${V1}/stores/channel`,
-      { channel_id: channelId, channel_signature: signature },
-    ),
+  getChannel: () => http.get<ChannelSettings>(`${V1}/stores/channel`),
+  setChannel: (patch: ChannelUpdate) =>
+    http.patch<ChannelSettings>(`${V1}/stores/channel`, patch),
   testChannel: () => http.post<{ ok: boolean }>(`${V1}/stores/channel/test`),
   getSettings: () => http.get<{ base_currency: Currency }>(`${V1}/stores/settings`),
   setBaseCurrency: (base: Currency) =>

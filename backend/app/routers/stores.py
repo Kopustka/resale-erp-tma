@@ -145,7 +145,12 @@ async def get_channel(
     store = (
         await session.execute(select(Store).where(Store.id == member.store_id))
     ).scalar_one()
-    return ChannelSettings(channel_id=store.channel_id, channel_signature=store.channel_signature)
+    return ChannelSettings(
+        channel_id=store.channel_id,
+        channel_signature=store.channel_signature,
+        watermark_enabled=store.watermark_enabled,
+        watermark_text=store.watermark_text,
+    )
 
 
 @router.patch("/channel", response_model=ChannelSettings)
@@ -161,8 +166,17 @@ async def set_channel(
     store.channel_id = channel
     sig = (payload.channel_signature or "").strip()
     store.channel_signature = sig or None
+    if payload.watermark_enabled is not None:
+        store.watermark_enabled = payload.watermark_enabled
+    if payload.watermark_text is not None:
+        store.watermark_text = payload.watermark_text.strip() or None
     await session.commit()
-    return ChannelSettings(channel_id=channel, channel_signature=store.channel_signature)
+    return ChannelSettings(
+        channel_id=channel,
+        channel_signature=store.channel_signature,
+        watermark_enabled=store.watermark_enabled,
+        watermark_text=store.watermark_text,
+    )
 
 
 @router.post("/channel/test")

@@ -189,6 +189,22 @@ export interface SwitchStoreResult {
   current_store_id: string
 }
 
+/** Настройки автопостинга склада. */
+export interface ChannelSettings {
+  channel_id: string | null
+  channel_signature: string | null
+  watermark_enabled: boolean
+  watermark_text: string | null
+}
+
+/** Частичное обновление настроек автопостинга. */
+export interface ChannelUpdate {
+  channel_id?: string | null
+  channel_signature?: string | null
+  watermark_enabled?: boolean | null
+  watermark_text?: string | null
+}
+
 // --------------------------- Шаблоны постов --------------------------- //
 
 /** Шаблон подписи для автопостинга в канал. */

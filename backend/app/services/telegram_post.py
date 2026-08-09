@@ -71,8 +71,13 @@ async def post_item(
     item: dict,
     signature: str | None = None,
     template_body: str | None = None,
+    watermark_text: str | None = None,
 ) -> int | None:
-    """Публикует вещь. Возвращает message_id первого сообщения или None."""
+    """Публикует вещь. Возвращает message_id первого сообщения или None.
+
+    watermark_text — если задан, накладывается на локальные фото (копия,
+    оригинал в хранилище не меняется).
+    """
     caption = build_caption(item, signature, template_body)
     photos: list[str] = item.get("photo_file_ids") or []
 
@@ -93,6 +98,10 @@ async def post_item(
                 data = _load_local(entry)
                 if data is None:
                     continue
+                if watermark_text:
+                    from .watermark import apply as apply_watermark
+
+                    data = apply_watermark(data, watermark_text)
                 key = f"photo{i}"
                 files[key] = (f"{key}.jpg", data)
                 item_media["media"] = f"attach://{key}"

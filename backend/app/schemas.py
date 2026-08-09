@@ -213,12 +213,16 @@ class SwitchStore(BaseModel):
 class ChannelSettings(BaseModel):
     channel_id: str | None = None
     channel_signature: str | None = None
+    watermark_enabled: bool = False
+    watermark_text: str | None = None
 
 
 class ChannelUpdate(BaseModel):
     # @username или -100…; пустая строка/None — отключить автопостинг
     channel_id: str | None = None
     channel_signature: str | None = None
+    watermark_enabled: bool | None = None
+    watermark_text: str | None = Field(None, max_length=60)
 
 
 class StoreSettings(BaseModel):
