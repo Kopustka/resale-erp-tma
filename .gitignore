@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Node / frontend
+node_modules/
+dist/
+*.local
+
+# Загруженные пользователем медиа (runtime-данные, не код)
+backend/media/*
+!backend/media/.gitkeep
+
+# Misc
+.DS_Store
+*.log

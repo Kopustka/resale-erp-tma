@@ -1,0 +1,122 @@
+/* --------------------------------------------------------------------------
+   Базовые стили. Плоский минимализм. Цвета — только Telegram CSS-переменные.
+   Значения по умолчанию заданы на случай отсутствия темы (перекрываются JS).
+   -------------------------------------------------------------------------- */
+:root {
+  --tg-theme-bg-color: #ffffff;
+  --tg-theme-text-color: #000000;
+  --tg-theme-hint-color: #707579;
+  --tg-theme-link-color: #2481cc;
+  --tg-theme-button-color: #2481cc;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: #f0f0f0;
+  --tg-theme-header-bg-color: #ffffff;
+  --tg-theme-accent-text-color: #2481cc;
+  --tg-theme-section-bg-color: #ffffff;
+  --tg-theme-destructive-text-color: #df3f40;
+
+  /* Служебные акценты статусов (fallback). */
+  --accent-positive: #34c759;
+  --accent-negative: #ff3b30;
+
+  /* Геометрия — строго плоская, скругления <= 8px. */
+  --radius: 8px;
+  --radius-sm: 6px;
+  --gap: 12px;
+  --tap: 44px;
+  --nav-height: 56px;
+
+  /* Отступ = максимум из выреза устройства (env) и инсета Telegram
+     (--tg-safe-*, задаётся из JS; в fullscreen учитывает кнопки Telegram). */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px));
+
+  color-scheme: light dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  background: var(--tg-theme-bg-color);
+  color: var(--tg-theme-text-color);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+#app {
+  min-height: 100%;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 16px; /* защита от авто-зума iOS */
+  color: var(--tg-theme-text-color);
+  background: var(--tg-theme-bg-color);
+}
+
+/* Крупные важные цифры — жирные и с табличными цифрами. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.num-strong {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  font-weight: 700;
+}
+
+.hint {
+  color: var(--tg-theme-hint-color);
+}
+
+.positive {
+  color: var(--accent-positive);
+}
+.negative {
+  color: var(--accent-negative);
+}
+
+/* Утилита минимального тап-таргета. */
+.tap {
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+/* Убираем синюю подсветку тапа в webview. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Скрытие скроллбаров там, где мешают. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
