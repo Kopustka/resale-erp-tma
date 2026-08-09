@@ -79,6 +79,7 @@ const watermarkEnabled = ref(false)
 const watermarkText = ref('')
 const bumpEnabled = ref(false)
 const bumpAfterDays = ref(60)
+const previewBefore = ref(false)
 
 async function loadChannel(): Promise<void> {
   try {
@@ -90,6 +91,7 @@ async function loadChannel(): Promise<void> {
     watermarkText.value = ch.watermark_text ?? ''
     bumpEnabled.value = ch.bump_enabled
     bumpAfterDays.value = ch.bump_after_days
+    previewBefore.value = ch.preview_before_post
   } catch {
     /* игнор — просто пусто */
   }
@@ -106,6 +108,7 @@ async function saveChannel(): Promise<void> {
       watermark_text: watermarkText.value.trim() || null,
       bump_enabled: bumpEnabled.value,
       bump_after_days: bumpAfterDays.value,
+      preview_before_post: previewBefore.value,
     })
     toast.success('Сохранено')
   } catch (e) {
@@ -337,6 +340,16 @@ function exportCsv(): void {
           placeholder="@ваш_канал (пусто — возьмём подпись выше)"
           autocomplete="off"
         />
+
+        <label class="wm-row">
+          <span class="wm-main">
+            <span class="wm-title">Показывать перед публикацией</span>
+            <span class="wm-sub">
+              Бот пришлёт готовый пост в личку с кнопками «Опубликовать» и «Отмена».
+            </span>
+          </span>
+          <input v-model="previewBefore" type="checkbox" class="wm-check" />
+        </label>
 
         <label class="wm-row">
           <span class="wm-main">

@@ -197,6 +197,7 @@ export interface ChannelSettings {
   watermark_text: string | null
   bump_enabled: boolean
   bump_after_days: number
+  preview_before_post: boolean
 }
 
 /** Частичное обновление настроек автопостинга. */
@@ -207,6 +208,7 @@ export interface ChannelUpdate {
   watermark_text?: string | null
   bump_enabled?: boolean | null
   bump_after_days?: number | null
+  preview_before_post?: boolean | null
 }
 
 /** Канал автопостинга склада. */

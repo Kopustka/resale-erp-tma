@@ -104,6 +104,8 @@ class Store(Base):
     # Автоподнятие зависших: по умолчанию выключено — оно удаляет старый пост.
     bump_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     bump_after_days: Mapped[int] = mapped_column(Integer, default=60)
+    # Показывать пост в личке и ждать кнопки «Опубликовать».
+    preview_before_post: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -370,6 +372,8 @@ class JobKind(str, enum.Enum):
 
 
 class JobStatus(str, enum.Enum):
+    # Ждёт подтверждения владельца в личке — воркер такие не забирает.
+    AWAITING = "AWAITING"
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     DONE = "DONE"

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
+    CallbackQuery,
     ChatMemberUpdated,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -22,13 +24,17 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import (
     InviteStatus,
+    Role,
+    JobKind,
+    JobStatus,
+    PostJob,
     PostTemplate,
     Store,
     StoreInvite,
     StoreMember,
     User,
 )
-from .services import ai_template, post_template, template_capture
+from .services import ai_template, post_template, preview, template_capture
 from .services.ai_describe import AiGenerationError, AiNotConfigured
 
 settings = get_settings()
@@ -162,13 +168,13 @@ async def on_template_sample(message: Message):
 
     await template_capture.finish(token, tpl_id)
 
-    preview = post_template.render_demo(result["body"])
+    demo = post_template.render_demo(result["body"])
     await note.edit_text(
         f"✅ Шаблон «{post_template.esc(tpl_name)}» готов.\n\n"
         "Вот как он будет выглядеть на примере вещи:",
         parse_mode="HTML",
     )
-    await message.answer(preview, parse_mode="HTML", reply_markup=_webapp_kb())
+    await message.answer(demo, parse_mode="HTML", reply_markup=_webapp_kb())
 
 
 @dp.message(CommandStart())
@@ -218,6 +224,67 @@ async def cmd_start(message: Message):
 def _owner_role():
     from .models import Role
     return Role.OWNER
+
+
+@dp.callback_query(F.data.startswith(f"{preview.APPROVE}:") | F.data.startswith(f"{preview.DECLINE}:"))
+async def on_preview_decision(cq: CallbackQuery):
+    """Кнопки под предпросмотром: публикуем задания или отменяем их."""
+    action, _, raw_id = (cq.data or "").partition(":")
+    try:
+        item_id = uuid.UUID(raw_id)
+    except ValueError:
+        await cq.answer("Некорректная кнопка")
+        return
+
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == cq.from_user.id))
+        ).scalar_one_or_none()
+        if user is None:
+            await cq.answer("Вы не зарегистрированы", show_alert=True)
+            return
+
+        jobs = (
+            await s.execute(
+                select(PostJob).where(
+                    PostJob.item_id == item_id,
+                    PostJob.kind == JobKind.POST_ITEM,
+                    PostJob.status == JobStatus.AWAITING,
+                )
+            )
+        ).scalars().all()
+        if not jobs:
+            await cq.answer("Этот предпросмотр уже неактуален")
+            with suppress(Exception):
+                await cq.message.edit_reply_markup(reply_markup=None)
+            return
+
+        # Кнопку мог нажать кто угодно, кому переслали сообщение, — проверяем,
+        # что человек действительно вправе публиковать на этом складе.
+        allowed = (
+            await s.execute(
+                select(StoreMember).where(
+                    StoreMember.user_id == user.id,
+                    StoreMember.store_id == jobs[0].store_id,
+                    StoreMember.role.in_((Role.OWNER, Role.EMPLOYEE)),
+                )
+            )
+        ).scalar_one_or_none()
+        if allowed is None:
+            await cq.answer("Нет прав на публикацию", show_alert=True)
+            return
+
+        new_status = JobStatus.PENDING if action == preview.APPROVE else JobStatus.CANCELLED
+        for job in jobs:
+            job.status = new_status
+        await s.commit()
+
+    note = ("✅ Отправляю в канал…" if action == preview.APPROVE
+            else "✖️ Публикация отменена")
+    await cq.answer(note)
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=None)
+        await cq.message.reply(note)
 
 
 @dp.my_chat_member()

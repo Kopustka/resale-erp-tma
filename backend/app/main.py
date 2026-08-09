@@ -30,6 +30,7 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS bump_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS bump_after_days INTEGER NOT NULL DEFAULT 60",
     "ALTER TABLE items ADD COLUMN IF NOT EXISTS bumped_at TIMESTAMPTZ",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS preview_before_post BOOLEAN NOT NULL DEFAULT FALSE",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые
@@ -38,6 +39,7 @@ _ENSURE_COLUMNS = (
 _ENSURE_ENUM_VALUES = (
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'EDIT_CAPTION'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'BUMP'",
+    "ALTER TYPE job_status_enum ADD VALUE IF NOT EXISTS 'AWAITING'",
 )
 
 # Перенос на мультиканальность. Оба шага идемпотентны (NOT EXISTS + ON CONFLICT),

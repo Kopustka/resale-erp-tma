@@ -37,7 +37,7 @@ from ..schemas import (
     VoiceParseRequest,
     VoiceParseResult,
 )
-from ..services import fx, idempotency, post_queue
+from ..services import fx, idempotency, post_queue, preview, telegram_post
 from ..services.ai_describe import (
     AiGenerationError,
     AiNotConfigured,
@@ -485,7 +485,7 @@ async def patch_status(
     # Автопостинг: при выставлении ставим публикацию во все включённые каналы,
     # при продаже — пометку «продано» в каждом, где вещь уже висит.
     if target == ItemStatus.LISTED:
-        await _enqueue_publish(session, member.store_id, item_id)
+        await _enqueue_publish(session, member.store_id, item_id, actor=user)
     elif target in SOLD_STATUSES:
         await _enqueue_mark_sold(session, member.store_id, item_id)
 
@@ -515,8 +515,14 @@ def _item_to_post_dict(it: Item) -> dict:
     }
 
 
-async def _enqueue_publish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:
-    """Ставит публикацию во все включённые каналы склада, кроме уже опубликованных."""
+async def _enqueue_publish(
+    session, store_id: uuid.UUID, item_id: uuid.UUID, actor: User | None = None
+) -> None:
+    """Ставит публикацию во все включённые каналы склада, кроме уже опубликованных.
+
+    Если у склада включён предпросмотр, задания создаются в статусе AWAITING
+    и уходят в личку на подтверждение — воркер их не тронет.
+    """
     channels = (
         await session.execute(
             select(Channel).where(Channel.store_id == store_id, Channel.enabled.is_(True))
@@ -542,11 +548,16 @@ async def _enqueue_publish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> 
             )
         ).scalars().all()
     )
-    added = False
-    for ch in channels:
-        if ch.id in posted or ch.id in queued:
-            continue
-        await post_queue.enqueue(
+    store = (
+        await session.execute(select(Store).where(Store.id == store_id))
+    ).scalar_one_or_none()
+    need_preview = bool(store and store.preview_before_post and actor is not None)
+
+    targets = [ch for ch in channels if ch.id not in posted and ch.id not in queued]
+    if not targets:
+        return
+    for ch in targets:
+        job = await post_queue.enqueue(
             session,
             store_id=store_id,
             kind=JobKind.POST_ITEM,
@@ -554,8 +565,45 @@ async def _enqueue_publish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> 
             channel_uid=ch.id,
             item_id=item_id,
         )
-        added = True
-    if added:
+        if need_preview:
+            job.status = JobStatus.AWAITING
+    await session.commit()
+
+    if not need_preview:
+        return
+
+    item = (
+        await session.execute(select(Item).where(Item.id == item_id))
+    ).scalar_one_or_none()
+    if item is None:
+        return
+    caption = telegram_post.build_caption(
+        _item_to_post_dict(item),
+        targets[0].signature or (store.channel_signature if store else None),
+        await _default_template_body(session, store_id),
+    )
+    photos = list(item.photo_file_ids or [])
+    sent = await preview.send_preview(
+        actor.telegram_id,
+        item_id,
+        caption,
+        photos[0] if photos else None,
+        len(targets),
+        await _watermark_text(session, store_id),
+    )
+    if not sent:
+        # Личку не открыли или бот заблокирован — не держим вещь в подвешенном
+        # состоянии, публикуем как обычно.
+        await session.execute(
+            update(PostJob)
+            .where(
+                PostJob.item_id == item_id,
+                PostJob.kind == JobKind.POST_ITEM,
+                PostJob.status == JobStatus.AWAITING,
+            )
+            .values(status=JobStatus.PENDING)
+            .execution_options(synchronize_session=False)
+        )
         await session.commit()
 
 
