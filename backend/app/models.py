@@ -108,6 +108,8 @@ class Store(Base):
     preview_before_post: Mapped[bool] = mapped_column(Boolean, default=False)
     # Приём подписок «сообщи, когда появится» от покупателей.
     subscriptions_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Автоответы на типовые вопросы в комментариях под постом.
+    auto_reply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -483,6 +485,10 @@ class ItemPost(Base):
     # Число реакций на пост. Просмотры Bot API не отдаёт (только MTProto),
     # поэтому реакции — единственный доступный отсюда сигнал отклика.
     reactions: Mapped[int] = mapped_column(Integer, default=0)
+    # Привязка к ветке комментариев: канальный пост автоматически пересылается
+    # в группу обсуждений, и ответы висят тредом на этой копии.
+    discussion_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    discussion_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = _created()
 
     __table_args__ = (

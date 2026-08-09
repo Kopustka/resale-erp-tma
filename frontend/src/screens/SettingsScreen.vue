@@ -81,6 +81,7 @@ const bumpEnabled = ref(false)
 const bumpAfterDays = ref(60)
 const previewBefore = ref(false)
 const subsEnabled = ref(false)
+const autoReply = ref(false)
 
 async function loadChannel(): Promise<void> {
   try {
@@ -94,6 +95,7 @@ async function loadChannel(): Promise<void> {
     bumpAfterDays.value = ch.bump_after_days
     previewBefore.value = ch.preview_before_post
     subsEnabled.value = ch.subscriptions_enabled
+    autoReply.value = ch.auto_reply_enabled
   } catch {
     /* игнор — просто пусто */
   }
@@ -112,6 +114,7 @@ async function saveChannel(): Promise<void> {
       bump_after_days: bumpAfterDays.value,
       preview_before_post: previewBefore.value,
       subscriptions_enabled: subsEnabled.value,
+      auto_reply_enabled: autoReply.value,
     })
     toast.success('Сохранено')
   } catch (e) {
@@ -343,6 +346,22 @@ function exportCsv(): void {
           placeholder="@ваш_канал (пусто — возьмём подпись выше)"
           autocomplete="off"
         />
+
+        <label class="wm-row">
+          <span class="wm-main">
+            <span class="wm-title">Отвечать в комментариях</span>
+            <span class="wm-sub">
+              Бот сам ответит на вопросы о замерах, размере, цене, состоянии
+              и наличии. Если вопрос непонятен — промолчит.
+            </span>
+          </span>
+          <input v-model="autoReply" type="checkbox" class="wm-check" />
+        </label>
+        <p v-if="autoReply" class="hint channel-hint">
+          Нужны две вещи: к каналу привязана группа обсуждений, и бот добавлен
+          в неё <b>администратором</b>. Иначе Telegram не покажет ему комментарии —
+          у ботов по умолчанию включён режим приватности.
+        </p>
 
         <label class="wm-row">
           <span class="wm-main">

@@ -34,6 +34,9 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS reactions INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS subscriptions_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS sub_id UUID",
+    "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_chat_id BIGINT",
+    "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_message_id BIGINT",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые

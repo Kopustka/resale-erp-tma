@@ -233,6 +233,7 @@ class ChannelSettings(BaseModel):
     bump_after_days: int = 60
     preview_before_post: bool = False
     subscriptions_enabled: bool = False
+    auto_reply_enabled: bool = False
 
 
 class ChannelUpdate(BaseModel):
@@ -245,6 +246,7 @@ class ChannelUpdate(BaseModel):
     bump_after_days: int | None = Field(None, ge=7, le=365)
     preview_before_post: bool | None = None
     subscriptions_enabled: bool | None = None
+    auto_reply_enabled: bool | None = None
 
 
 class StoreSettings(BaseModel):

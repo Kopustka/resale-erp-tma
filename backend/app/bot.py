@@ -40,7 +40,14 @@ from .models import (
     StoreMember,
     User,
 )
-from .services import ai_template, post_template, preview, subscriptions, template_capture
+from .services import (
+    ai_template,
+    comment_reply,
+    post_template,
+    preview,
+    subscriptions,
+    template_capture,
+)
 from .services.ai_describe import AiGenerationError, AiNotConfigured
 from .services.fsm import SOLD_STATUSES
 
@@ -127,7 +134,8 @@ def _sample_html(message: Message) -> str:
     return html_decoration.unparse(text, entities)
 
 
-@dp.message((F.text & ~F.text.startswith("/")) | F.caption)
+# Только личка: в группе обсуждений это перехватывало бы комментарии.
+@dp.message(F.chat.type == "private", (F.text & ~F.text.startswith("/")) | F.caption)
 async def on_template_sample(message: Message):
     """Пример поста для клонирования дизайна — только при активной сессии."""
     active = await template_capture.get_active_for_user(message.from_user.id)
@@ -476,6 +484,73 @@ async def cmd_subs(message: Message):
     await message.answer("Ваши подписки — нажмите, чтобы отписаться:", reply_markup=kb)
 
 
+@dp.message(F.is_automatic_forward)
+async def on_channel_post_forwarded(message: Message):
+    """Пост автоматически переслан в группу обсуждений — запоминаем ветку.
+
+    Именно на этой копии висят комментарии, и её message_id становится
+    message_thread_id всех ответов. Без этой привязки связать вопрос
+    с вещью невозможно.
+    """
+    origin_chat = message.forward_from_chat
+    origin_id = message.forward_from_message_id
+    if origin_chat is None or origin_id is None:
+        raise SkipHandler
+    chat_id = str(origin_chat.id)
+    uname = f"@{origin_chat.username}" if origin_chat.username else None
+    async with SessionLocal() as s:
+        conds = [Channel.chat_id == chat_id]
+        if uname:
+            conds.append(Channel.chat_id == uname)
+        ch = (await s.execute(select(Channel).where(or_(*conds)))).scalars().first()
+        if ch is None:
+            raise SkipHandler
+        await s.execute(
+            update(ItemPost)
+            .where(ItemPost.channel_id == ch.id, ItemPost.message_id == origin_id)
+            .values(
+                discussion_chat_id=message.chat.id,
+                discussion_message_id=message.message_id,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await s.commit()
+    raise SkipHandler  # не мешаем другим обработчикам
+
+
+@dp.message(F.message_thread_id & F.text & ~F.text.startswith("/"))
+async def on_comment(message: Message):
+    """Вопрос в комментариях под постом — отвечаем, если знаем ответ."""
+    async with SessionLocal() as s:
+        row = (
+            await s.execute(
+                select(ItemPost, Item, Store)
+                .join(Item, Item.id == ItemPost.item_id)
+                .join(Store, Store.id == Item.store_id)
+                .where(
+                    ItemPost.discussion_chat_id == message.chat.id,
+                    ItemPost.discussion_message_id == message.message_thread_id,
+                )
+            )
+        ).first()
+        if row is None:
+            raise SkipHandler
+        _post, item, store = row
+        if not store.auto_reply_enabled:
+            raise SkipHandler
+        from .routers.items import _item_to_post_dict
+
+        data = _item_to_post_dict(item)
+        data["status"] = item.status.value
+        data["currency"] = item.price_currency
+
+    reply = comment_reply.answer(data, message.text or "")
+    if reply is None:
+        raise SkipHandler  # не поняли вопрос — молчим, а не отвечаем невпопад
+    with suppress(Exception):
+        await message.reply(reply)
+
+
 @dp.message_reaction_count()
 async def on_reactions(event: MessageReactionCountUpdated):
     """Счётчик реакций на пост канала — записываем в карточку публикации."""
@@ -535,7 +610,8 @@ async def on_added_to_chat(event: ChatMemberUpdated):
         pass
 
 
-@dp.message(F.photo)
+# Только личка: иначе бот отвечал бы file_id на каждое фото в группе.
+@dp.message(F.chat.type == "private", F.photo)
 async def on_photo(message: Message):
     """Приём фото: отдаём file_id, который фронт сохранит в товар."""
     # Ждём пример поста, а пришло фото без подписи — подсказываем, а не молчим.
