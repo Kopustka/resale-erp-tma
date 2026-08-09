@@ -151,6 +151,8 @@ async def get_channel(
         channel_signature=store.channel_signature,
         watermark_enabled=store.watermark_enabled,
         watermark_text=store.watermark_text,
+        bump_enabled=store.bump_enabled,
+        bump_after_days=store.bump_after_days,
     )
 
 
@@ -176,6 +178,10 @@ async def set_channel(
         store.watermark_enabled = payload.watermark_enabled
     if payload.watermark_text is not None:
         store.watermark_text = payload.watermark_text.strip() or None
+    if payload.bump_enabled is not None:
+        store.bump_enabled = payload.bump_enabled
+    if payload.bump_after_days is not None:
+        store.bump_after_days = payload.bump_after_days
 
     # Совместимость: постинг работает по таблице channels, а этот старый
     # эндпоинт правит поля склада. Держим их согласованными, иначе смена
@@ -204,6 +210,8 @@ async def set_channel(
         channel_signature=store.channel_signature,
         watermark_enabled=store.watermark_enabled,
         watermark_text=store.watermark_text,
+        bump_enabled=store.bump_enabled,
+        bump_after_days=store.bump_after_days,
     )
 
 

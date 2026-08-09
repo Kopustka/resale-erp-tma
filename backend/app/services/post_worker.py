@@ -9,11 +9,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 
 from ..db import SessionLocal
-from ..models import Channel, Item, ItemPost, JobKind, PostJob, Store
+from ..models import (
+    Channel,
+    Item,
+    ItemPost,
+    ItemStatus,
+    JobKind,
+    JobStatus,
+    PostJob,
+    Store,
+)
 from . import post_queue, telegram_post
 
 log = logging.getLogger("worker")
@@ -21,6 +31,8 @@ log = logging.getLogger("worker")
 POLL_INTERVAL = 3.0        # пусто в очереди — спим столько
 BATCH = 5
 STUCK_SWEEP_EVERY = 60.0   # как часто искать зависшие RUNNING
+BUMP_SCAN_EVERY = 900.0    # раз в 15 минут ищем вещи, которым пора наверх
+BUMP_COOLDOWN_DAYS = 7     # не поднимаем одну вещь чаще этого
 
 # Момент последней отправки в каждый канал: держим паузу между постами,
 # чтобы не упереться в лимит Telegram.
@@ -124,6 +136,39 @@ async def _run_job(job: PostJob) -> None:
                     prefix=job.caption_prefix or "",
                 )
 
+            elif job.kind == JobKind.BUMP:
+                # Поднятие = удалить старый пост и опубликовать заново, чтобы
+                # вещь оказалась наверху ленты канала.
+                post = (
+                    await session.execute(
+                        select(ItemPost).where(
+                            ItemPost.item_id == job.item_id,
+                            ItemPost.channel_id == job.channel_uid,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if post is None or post.sold_marked:
+                    await post_queue.mark_done(session, job.id)
+                    return
+                await _respect_rate_limit(job.channel_id)
+                await telegram_post.delete_message(job.channel_id, post.message_id)
+                new_id = await telegram_post.post_item(
+                    job.channel_id,
+                    ctx["post"],
+                    ctx["signature"],
+                    ctx["template"],
+                    ctx["watermark"],
+                )
+                if new_id is not None:
+                    post.message_id = new_id
+                await session.execute(
+                    update(Item)
+                    .where(Item.id == job.item_id)
+                    .values(bumped_at=datetime.now(timezone.utc))
+                    .execution_options(synchronize_session=False)
+                )
+                await session.commit()
+
             elif job.kind == JobKind.MARK_SOLD:
                 message_id = job.message_id
                 if message_id is None:
@@ -155,12 +200,79 @@ async def _run_job(job: PostJob) -> None:
             await post_queue.mark_failed(session, job, f"{type(e).__name__}: {e}")
 
 
+async def scan_for_bumps(session) -> int:
+    """Ставит поднятие вещам, которые давно висят и давно не поднимались.
+
+    Возвращает число поставленных заданий. Вынесено отдельно от цикла,
+    чтобы правило отбора можно было проверить тестом без воркера.
+    """
+    now = datetime.now(timezone.utc)
+    stores = (
+        await session.execute(
+            select(Store).where(Store.bump_enabled.is_(True))
+        )
+    ).scalars().all()
+    queued = 0
+    for store in stores:
+        listed_before = now - timedelta(days=store.bump_after_days)
+        cooldown = now - timedelta(days=BUMP_COOLDOWN_DAYS)
+        rows = (
+            await session.execute(
+                select(Item, ItemPost, Channel)
+                .join(ItemPost, ItemPost.item_id == Item.id)
+                .join(Channel, Channel.id == ItemPost.channel_id)
+                .where(
+                    Item.store_id == store.id,
+                    Item.status == ItemStatus.LISTED,
+                    Item.archived_at.is_(None),
+                    Item.listed_date <= listed_before,
+                    ItemPost.sold_marked.is_(False),
+                    Channel.enabled.is_(True),
+                    (Item.bumped_at.is_(None)) | (Item.bumped_at <= cooldown),
+                )
+            )
+        ).all()
+        for item, post, ch in rows:
+            busy = (
+                await session.execute(
+                    select(PostJob.id).where(
+                        PostJob.item_id == item.id,
+                        PostJob.kind == JobKind.BUMP,
+                        PostJob.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if busy is not None:
+                continue
+            await post_queue.enqueue(
+                session,
+                store_id=store.id,
+                kind=JobKind.BUMP,
+                channel_id=ch.chat_id,
+                channel_uid=ch.id,
+                item_id=item.id,
+                message_id=post.message_id,
+            )
+            queued += 1
+    if queued:
+        await session.commit()
+    return queued
+
+
 async def run_forever() -> None:
     log.info("очередь публикаций запущена")
     last_sweep = 0.0
+    last_bump_scan = time.monotonic()  # первый скан — не сразу после старта
     while True:
         try:
             now = time.monotonic()
+            if now - last_bump_scan > BUMP_SCAN_EVERY:
+                last_bump_scan = now
+                async with SessionLocal() as s:
+                    n = await scan_for_bumps(s)
+                if n:
+                    log.info("поставлено поднятий: %s", n)
+
             if now - last_sweep > STUCK_SWEEP_EVERY:
                 last_sweep = now
                 async with SessionLocal() as s:

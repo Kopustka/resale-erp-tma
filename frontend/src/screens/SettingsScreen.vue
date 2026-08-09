@@ -77,6 +77,8 @@ const channelSaved = ref<string | null>(null)
 const channelBusy = ref(false)
 const watermarkEnabled = ref(false)
 const watermarkText = ref('')
+const bumpEnabled = ref(false)
+const bumpAfterDays = ref(60)
 
 async function loadChannel(): Promise<void> {
   try {
@@ -86,6 +88,8 @@ async function loadChannel(): Promise<void> {
     channelSignature.value = ch.channel_signature ?? ''
     watermarkEnabled.value = ch.watermark_enabled
     watermarkText.value = ch.watermark_text ?? ''
+    bumpEnabled.value = ch.bump_enabled
+    bumpAfterDays.value = ch.bump_after_days
   } catch {
     /* игнор — просто пусто */
   }
@@ -100,6 +104,8 @@ async function saveChannel(): Promise<void> {
       channel_signature: channelSignature.value.trim() || null,
       watermark_enabled: watermarkEnabled.value,
       watermark_text: watermarkText.value.trim() || null,
+      bump_enabled: bumpEnabled.value,
+      bump_after_days: bumpAfterDays.value,
     })
     toast.success('Сохранено')
   } catch (e) {
@@ -331,6 +337,22 @@ function exportCsv(): void {
           placeholder="@ваш_канал (пусто — возьмём подпись выше)"
           autocomplete="off"
         />
+
+        <label class="wm-row">
+          <span class="wm-main">
+            <span class="wm-title">Поднимать зависшие</span>
+            <span class="wm-sub">
+              Вещь, висящая дольше срока ниже, переопубликуется наверх канала.
+              Старый пост при этом удаляется.
+            </span>
+          </span>
+          <input v-model="bumpEnabled" type="checkbox" class="wm-check" />
+        </label>
+        <div v-if="bumpEnabled" class="bump-days">
+          <span class="wm-sub">Поднимать после</span>
+          <input v-model.number="bumpAfterDays" type="number" min="7" max="365" class="field days" />
+          <span class="wm-sub">дней</span>
+        </div>
 
         <button class="btn-primary tap save-row" :disabled="channelBusy" @click="saveChannel">
           {{ channelBusy ? '…' : 'Сохранить' }}
@@ -660,5 +682,15 @@ function exportCsv(): void {
 .save-row {
   width: 100%;
   margin-top: 14px;
+}
+.bump-days {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.field.days {
+  width: 90px;
+  text-align: center;
 }
 </style>

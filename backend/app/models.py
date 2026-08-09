@@ -101,6 +101,9 @@ class Store(Base):
     # Водяной знак на фото, уходящих в канал (оригиналы не меняются).
     watermark_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     watermark_text: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Автоподнятие зависших: по умолчанию выключено — оно удаляет старый пост.
+    bump_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    bump_after_days: Mapped[int] = mapped_column(Integer, default=60)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -268,6 +271,10 @@ class Item(Base):
     )
     # id опубликованного поста в канале (дедуп + пометка «продано»)
     channel_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Когда вещь последний раз поднимали в канале (защита от бампа по кругу).
+    bumped_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -359,6 +366,7 @@ class JobKind(str, enum.Enum):
     POST_ITEM = "POST_ITEM"      # опубликовать вещь в канал
     MARK_SOLD = "MARK_SOLD"      # пометить существующий пост проданным
     EDIT_CAPTION = "EDIT_CAPTION"  # перерисовать подпись (сменилась цена и т.п.)
+    BUMP = "BUMP"                # поднять зависшую вещь: удалить пост и дать заново
 
 
 class JobStatus(str, enum.Enum):

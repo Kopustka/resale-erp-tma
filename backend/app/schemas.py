@@ -215,6 +215,8 @@ class ChannelSettings(BaseModel):
     channel_signature: str | None = None
     watermark_enabled: bool = False
     watermark_text: str | None = None
+    bump_enabled: bool = False
+    bump_after_days: int = 60
 
 
 class ChannelUpdate(BaseModel):
@@ -223,6 +225,8 @@ class ChannelUpdate(BaseModel):
     channel_signature: str | None = None
     watermark_enabled: bool | None = None
     watermark_text: str | None = Field(None, max_length=60)
+    bump_enabled: bool | None = None
+    bump_after_days: int | None = Field(None, ge=7, le=365)
 
 
 class StoreSettings(BaseModel):

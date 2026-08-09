@@ -209,6 +209,24 @@ async def mark_sold(
     )
 
 
+async def delete_message(channel_id: str, message_id: int) -> None:
+    """Удаляет пост. Уже удалённое сообщение ошибкой не считаем."""
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(
+            f"{API}/deleteMessage",
+            json={"chat_id": channel_id, "message_id": message_id},
+        )
+    data = r.json()
+    if data.get("ok"):
+        return
+    desc = str(data.get("description", "")).lower()
+    # Пост мог быть удалён руками или устареть — для бампа это не помеха.
+    if "not found" in desc or "message to delete" in desc or "message can't be deleted" in desc:
+        log.info("delete_message: %s", desc)
+        return
+    raise ChannelError(data.get("description", f"HTTP {r.status_code}"))
+
+
 async def send_test(channel_id: str) -> None:
     """Проверка: бот шлёт тестовое сообщение в канал. Бросает ChannelError."""
     async with httpx.AsyncClient(timeout=20) as client:
