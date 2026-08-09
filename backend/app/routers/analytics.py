@@ -38,6 +38,7 @@ async def summary(
 
     return AnalyticsSummary(
         stale=StaleBucket(threshold_days=days, count=stale_count, item_ids=stale_ids),
+        by_channel=await repo.by_channel(member.store_id),
         by_location=[LocationRoi(**r) for r in locations],
         turnover=[TurnoverPoint(**t) for t in turnover],
         total_profit=total,
