@@ -1,9 +1,10 @@
 """Точка входа FastAPI."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +34,16 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         for stmt in _ENSURE_COLUMNS:
             await conn.execute(text(stmt))
-    yield
+
+    from .services.post_worker import run_forever
+
+    worker = asyncio.create_task(run_forever(), name="post-queue")
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
 
 
 app = FastAPI(title="Resale ERP TMA", version="1.0.0", lifespan=lifespan)

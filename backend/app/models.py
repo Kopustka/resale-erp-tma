@@ -353,3 +353,57 @@ class PostTemplate(Base):
     __table_args__ = (
         Index("ix_tpl_store_default", "store_id", "is_default"),
     )
+
+
+class JobKind(str, enum.Enum):
+    POST_ITEM = "POST_ITEM"      # опубликовать вещь в канал
+    MARK_SOLD = "MARK_SOLD"      # пометить существующий пост проданным
+
+
+class JobStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class PostJob(Base):
+    """Задание на публикацию в канал.
+
+    Раньше постинг уходил в asyncio.create_task: задача не переживала
+    рестарт, не имела ретраев и не считалась с лимитами Telegram
+    (~20 сообщений в минуту на канал). Очередь в БД решает всё три задачи
+    и даёт отложенную публикацию.
+    """
+
+    __tablename__ = "post_jobs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    item_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("items.id"), nullable=True, index=True
+    )
+    kind: Mapped[JobKind] = mapped_column(SAEnum(JobKind, name="job_kind_enum"))
+    status: Mapped[JobStatus] = mapped_column(
+        SAEnum(JobStatus, name="job_status_enum"), default=JobStatus.PENDING
+    )
+    channel_id: Mapped[str] = mapped_column(String(80))
+    # Для MARK_SOLD — какой пост править.
+    message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    # Не раньше этого момента: отложенная публикация и экспоненциальный откат.
+    run_after: Mapped[datetime] = _created()
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+    __table_args__ = (
+        Index("ix_jobs_claim", "status", "run_after"),
+        Index("ix_jobs_store_status", "store_id", "status"),
+    )

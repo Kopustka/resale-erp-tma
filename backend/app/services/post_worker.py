@@ -1,0 +1,139 @@
+"""Фоновый исполнитель очереди публикаций.
+
+Живёт внутри процесса API как asyncio-задача. Захват заданий безопасен
+для нескольких процессов (SKIP LOCKED), поэтому масштабирование uvicorn
+дублей не создаст.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+
+from sqlalchemy import select, update
+
+from ..db import SessionLocal
+from ..models import Item, JobKind, PostJob, Store
+from . import post_queue, telegram_post
+
+log = logging.getLogger("worker")
+
+POLL_INTERVAL = 3.0        # пусто в очереди — спим столько
+BATCH = 5
+STUCK_SWEEP_EVERY = 60.0   # как часто искать зависшие RUNNING
+
+# Момент последней отправки в каждый канал: держим паузу между постами,
+# чтобы не упереться в лимит Telegram.
+_last_send: dict[str, float] = {}
+
+
+async def _respect_rate_limit(channel_id: str) -> None:
+    last = _last_send.get(channel_id)
+    if last is not None:
+        wait = post_queue.MIN_GAP_SECONDS - (time.monotonic() - last)
+        if wait > 0:
+            await asyncio.sleep(wait)
+    _last_send[channel_id] = time.monotonic()
+
+
+async def _load_context(session, job: PostJob):
+    """Свежие данные вещи и склада на момент исполнения, а не постановки."""
+    from ..routers.items import _default_template_body, _item_to_post_dict, _watermark_text
+
+    item = (
+        await session.execute(select(Item).where(Item.id == job.item_id))
+    ).scalar_one_or_none()
+    if item is None:
+        return None
+    store = (
+        await session.execute(select(Store).where(Store.id == job.store_id))
+    ).scalar_one_or_none()
+    return {
+        "post": _item_to_post_dict(item),
+        "signature": store.channel_signature if store else None,
+        "template": await _default_template_body(session, job.store_id),
+        "watermark": await _watermark_text(session, job.store_id),
+        "channel_message_id": item.channel_message_id,
+    }
+
+
+async def _run_job(job: PostJob) -> None:
+    async with SessionLocal() as session:
+        try:
+            ctx = await _load_context(session, job)
+            if ctx is None:
+                await post_queue.mark_done(session, job.id)  # вещь удалили — не ошибка
+                return
+
+            if job.kind == JobKind.POST_ITEM:
+                if ctx["channel_message_id"] is not None:
+                    await post_queue.mark_done(session, job.id)  # уже опубликовано
+                    return
+                await _respect_rate_limit(job.channel_id)
+                msg_id = await telegram_post.post_item(
+                    job.channel_id,
+                    ctx["post"],
+                    ctx["signature"],
+                    ctx["template"],
+                    ctx["watermark"],
+                )
+                if msg_id is not None:
+                    await session.execute(
+                        update(Item)
+                        .where(Item.id == job.item_id, Item.channel_message_id.is_(None))
+                        .values(channel_message_id=msg_id)
+                        .execution_options(synchronize_session=False)
+                    )
+                    await session.commit()
+
+            elif job.kind == JobKind.MARK_SOLD:
+                message_id = job.message_id or ctx["channel_message_id"]
+                if message_id is None:
+                    await post_queue.mark_done(session, job.id)  # нечего править
+                    return
+                await _respect_rate_limit(job.channel_id)
+                await telegram_post.mark_sold(
+                    job.channel_id,
+                    message_id,
+                    ctx["post"],
+                    ctx["signature"],
+                    ctx["template"],
+                )
+
+            await post_queue.mark_done(session, job.id)
+
+        except Exception as e:  # noqa: BLE001
+            await session.rollback()
+            await post_queue.mark_failed(session, job, f"{type(e).__name__}: {e}")
+
+
+async def run_forever() -> None:
+    log.info("очередь публикаций запущена")
+    last_sweep = 0.0
+    while True:
+        try:
+            now = time.monotonic()
+            if now - last_sweep > STUCK_SWEEP_EVERY:
+                last_sweep = now
+                async with SessionLocal() as s:
+                    freed = await post_queue.release_stuck(s)
+                if freed:
+                    log.warning("вернул в очередь зависших заданий: %s", freed)
+
+            async with SessionLocal() as s:
+                jobs = await post_queue.claim(s, BATCH)
+
+            if not jobs:
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+
+            for job in jobs:
+                await _run_job(job)
+
+        except asyncio.CancelledError:
+            log.info("очередь публикаций остановлена")
+            raise
+        except Exception as e:  # noqa: BLE001
+            # Воркер не имеет права умереть: любая неожиданность — пауза и дальше.
+            log.exception("сбой цикла очереди: %s", e)
+            await asyncio.sleep(POLL_INTERVAL)
