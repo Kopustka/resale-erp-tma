@@ -375,6 +375,7 @@ class JobKind(str, enum.Enum):
     BUMP = "BUMP"                # поднять зависшую вещь: удалить пост и дать заново
     NOTIFY_SUB = "NOTIFY_SUB"    # уведомить подписчика о подходящей новинке
     DROP_POST = "DROP_POST"      # опубликовать несколько вещей одним альбомом
+    CUSTOM_POST = "CUSTOM_POST"  # свободный пост без привязки к вещи
 
 
 class JobStatus(str, enum.Enum):
@@ -412,6 +413,10 @@ class PostJob(Base):
     channel_id: Mapped[str] = mapped_column(String(80))
     # Ссылка на канал: нужна, чтобы записать ItemPost после публикации.
     channel_uid: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    # Какой свободный пост публикуем (для CUSTOM_POST).
+    custom_post_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True
     )
     # Какой дроп публикуем (для DROP_POST).
@@ -569,4 +574,45 @@ class DropItem(Base):
 
     __table_args__ = (
         UniqueConstraint("drop_id", "item_id", name="uq_drop_item"),
+    )
+
+
+class CustomPostStatus(str, enum.Enum):
+    SCHEDULED = "SCHEDULED"
+    PUBLISHED = "PUBLISHED"
+    CANCELLED = "CANCELLED"
+
+
+class CustomPost(Base):
+    """Пост без привязки к вещи: анонс, опрос, «завтра ресток».
+
+    Канал живёт не только карточками товара, а расписание уже умеет
+    очередь — публикация ставится заданием с run_after.
+    """
+
+    __tablename__ = "custom_posts"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    body: Mapped[str] = mapped_column(Text)
+    photo_file_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, server_default="{}"
+    )
+    # NULL — публиковать сразу.
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    status: Mapped[CustomPostStatus] = mapped_column(
+        SAEnum(CustomPostStatus, name="custom_post_status_enum"),
+        default=CustomPostStatus.SCHEDULED,
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        Index("ix_custom_store_when", "store_id", "scheduled_at"),
     )

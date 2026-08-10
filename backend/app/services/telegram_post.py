@@ -298,6 +298,16 @@ async def delete_message(channel_id: str, message_id: int) -> None:
     raise ChannelError(data.get("description", f"HTTP {r.status_code}"))
 
 
+async def send_text(channel_id: str, text: str) -> int | None:
+    """Свободный пост без фото."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{API}/sendMessage",
+            json={"chat_id": channel_id, "text": text[:4096], "parse_mode": "HTML"},
+        )
+    return _msg_id(r)
+
+
 async def send_test(channel_id: str) -> None:
     """Проверка: бот шлёт тестовое сообщение в канал. Бросает ChannelError."""
     async with httpx.AsyncClient(timeout=20) as client:

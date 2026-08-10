@@ -9,6 +9,7 @@ import type {
   ChannelCreate,
   ChannelPatch,
   ChannelSettings,
+  CustomPost,
   DropOut,
   ChannelUpdate,
   Currency,
@@ -159,6 +160,19 @@ export const dropsApi = {
   /** Опубликовать выбранные вещи одним альбомом. */
   create: (itemIds: string[], title?: string, note?: string) =>
     http.post<DropOut>(`${V1}/drops`, { item_ids: itemIds, title, note }),
+}
+
+// -------------------------- Контент-календарь -------------------------- //
+export const postsApi = {
+  list: (includeDone = false) =>
+    http.get<CustomPost[]>(`${V1}/posts`, { include_done: includeDone || undefined }),
+  create: (body: string, scheduledAt: string | null, photoFileIds: string[] = []) =>
+    http.post<CustomPost>(`${V1}/posts`, {
+      body,
+      scheduled_at: scheduledAt,
+      photo_file_ids: photoFileIds,
+    }),
+  cancel: (id: string) => http.del<void>(`${V1}/posts/${id}`),
 }
 
 // ------------------------------- Analytics ------------------------------- //

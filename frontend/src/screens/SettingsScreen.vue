@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { openChannels, openTemplates } from '@/app/navigation'
+import { openCalendar, openChannels, openTemplates } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
@@ -28,6 +28,11 @@ const channelsHint = computed(() => {
   if (channelsCount.value === 0) return 'Не настроены'
   return `Подключено: ${channelsCount.value}`
 })
+
+function goCalendar(): void {
+  hapticSelection()
+  openCalendar()
+}
 
 function goChannels(): void {
   hapticSelection()
@@ -402,6 +407,14 @@ function exportCsv(): void {
 
         <button class="btn-primary tap save-row" :disabled="channelBusy" @click="saveChannel">
           {{ channelBusy ? '…' : 'Сохранить' }}
+        </button>
+
+        <button class="nav-row tap" @click="goCalendar">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Контент-план</span>
+            <span class="nav-row-sub">Анонсы и отложенные посты</span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">›</span>
         </button>
 
         <button class="nav-row tap" @click="goTemplates">

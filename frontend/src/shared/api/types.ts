@@ -298,6 +298,16 @@ export interface DropOut {
   channels: number
 }
 
+/** Свободный пост в расписании. */
+export interface CustomPost {
+  id: string
+  body: string
+  photo_count: number
+  scheduled_at: string | null
+  status: 'SCHEDULED' | 'PUBLISHED' | 'CANCELLED'
+  created_at: string
+}
+
 /** Поля фильтров списка склада. */
 export interface ItemFilters {
   status?: ItemStatus | null

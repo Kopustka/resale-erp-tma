@@ -66,14 +66,17 @@ def build_caption(drop: Drop, items: list[Item], signature: str | None = None) -
     return "\n".join(lines)[:1024]
 
 
-def photo_entries(items: list[Item], watermark_text: str | None) -> list[tuple[str | None, bytes | None]]:
-    """По одному фото с вещи: (file_id, байты). Вещи без фото пропускаем."""
+def entries_from_photos(
+    photo_ids: list[str], watermark_text: str | None
+) -> list[tuple[str | None, bytes | None]]:
+    """Готовит позиции альбома из записей photo_file_ids.
+
+    Локальные читаем в байты (и клеим водяной знак), telegram file_id
+    передаём ссылкой — скачивать и заливать обратно незачем.
+    Битые записи пропускаем: одна пропавшая картинка не должна ронять пост.
+    """
     out: list[tuple[str | None, bytes | None]] = []
-    for it in items[:MAX_ITEMS]:
-        photos = list(it.photo_file_ids or [])
-        if not photos:
-            continue
-        entry = photos[0]
+    for entry in photo_ids[:MAX_ITEMS]:
         if entry.startswith(LOCAL_PREFIX):
             name = entry[len(LOCAL_PREFIX):]
             if "/" in name or "\\" in name or ".." in name:
@@ -90,3 +93,9 @@ def photo_entries(items: list[Item], watermark_text: str | None) -> list[tuple[s
         else:
             out.append((entry, None))
     return out
+
+
+def photo_entries(items: list[Item], watermark_text: str | None) -> list[tuple[str | None, bytes | None]]:
+    """По одному фото с вещи. Вещи без фото пропускаем."""
+    firsts = [(it.photo_file_ids or [None])[0] for it in items[:MAX_ITEMS]]
+    return entries_from_photos([f for f in firsts if f], watermark_text)

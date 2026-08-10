@@ -76,6 +76,43 @@ async def _load_context(session, job: PostJob):
     }
 
 
+async def _run_custom(session, job: PostJob) -> None:
+    """Свободный пост: текст и, если есть, фото альбомом."""
+    from ..models import CustomPost, CustomPostStatus
+    from ..routers.items import _watermark_text
+    from . import drops
+
+    post = (
+        await session.execute(
+            select(CustomPost).where(CustomPost.id == job.custom_post_id)
+        )
+    ).scalar_one_or_none()
+    if post is None or post.status == CustomPostStatus.CANCELLED:
+        await post_queue.mark_done(session, job.id)  # отменили, пока ждал
+        return
+
+    await _respect_rate_limit(job.channel_id)
+    photos = list(post.photo_file_ids or [])
+    if photos:
+        wm = await _watermark_text(session, job.store_id)
+        entries = drops.entries_from_photos(photos, wm)
+        if entries:
+            await telegram_post.post_album(job.channel_id, entries, post.body)
+        else:
+            await telegram_post.send_text(job.channel_id, post.body)
+    else:
+        await telegram_post.send_text(job.channel_id, post.body)
+
+    await session.execute(
+        update(CustomPost)
+        .where(CustomPost.id == post.id)
+        .values(status=CustomPostStatus.PUBLISHED)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    await post_queue.mark_done(session, job.id)
+
+
 async def _run_drop(session, job: PostJob) -> None:
     """Публикация подборки альбомом: одно сообщение на фото, подпись на первом."""
     from ..routers.items import _watermark_text
@@ -126,6 +163,10 @@ async def _run_drop(session, job: PostJob) -> None:
 async def _run_job(job: PostJob) -> None:
     async with SessionLocal() as session:
         try:
+            if job.kind == JobKind.CUSTOM_POST:
+                await _run_custom(session, job)
+                return
+
             if job.kind == JobKind.DROP_POST:
                 await _run_drop(session, job)
                 return

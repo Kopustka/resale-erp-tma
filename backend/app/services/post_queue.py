@@ -40,6 +40,8 @@ async def enqueue(
     caption_prefix: str | None = None,
     sub_id: uuid.UUID | None = None,
     drop_id: uuid.UUID | None = None,
+    custom_post_id: uuid.UUID | None = None,
+    run_at: datetime | None = None,
     delay_seconds: int = 0,
 ) -> PostJob:
     """Ставит задание. Коммитит вызывающий."""
@@ -53,7 +55,9 @@ async def enqueue(
         caption_prefix=caption_prefix,
         sub_id=sub_id,
         drop_id=drop_id,
-        run_after=_now() + timedelta(seconds=delay_seconds),
+        custom_post_id=custom_post_id,
+        # run_at важнее delay_seconds: расписание задаёт точный момент.
+        run_after=run_at or (_now() + timedelta(seconds=delay_seconds)),
     )
     session.add(job)
     return job

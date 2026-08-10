@@ -350,3 +350,20 @@ class DropOut(BaseModel):
     item_count: int
     with_photo: int
     channels: int
+
+
+# --------------------------- Свободные посты --------------------------- #
+class CustomPostCreate(BaseModel):
+    body: str = Field(..., min_length=1, max_length=4000)
+    photo_file_ids: list[str] = Field(default_factory=list, max_length=10)
+    # None — опубликовать сразу
+    scheduled_at: datetime | None = None
+
+
+class CustomPostOut(BaseModel):
+    id: uuid.UUID
+    body: str
+    photo_count: int
+    scheduled_at: datetime | None = None
+    status: str
+    created_at: datetime
