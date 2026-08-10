@@ -374,6 +374,7 @@ class JobKind(str, enum.Enum):
     EDIT_CAPTION = "EDIT_CAPTION"  # перерисовать подпись (сменилась цена и т.п.)
     BUMP = "BUMP"                # поднять зависшую вещь: удалить пост и дать заново
     NOTIFY_SUB = "NOTIFY_SUB"    # уведомить подписчика о подходящей новинке
+    DROP_POST = "DROP_POST"      # опубликовать несколько вещей одним альбомом
 
 
 class JobStatus(str, enum.Enum):
@@ -411,6 +412,10 @@ class PostJob(Base):
     channel_id: Mapped[str] = mapped_column(String(80))
     # Ссылка на канал: нужна, чтобы записать ItemPost после публикации.
     channel_uid: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    # Какой дроп публикуем (для DROP_POST).
+    drop_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True
     )
     # Кому уведомление (для NOTIFY_SUB) — нужна для кнопки отписки.
@@ -527,4 +532,41 @@ class Subscription(Base):
 
     __table_args__ = (
         Index("ix_sub_store_active", "store_id", "active"),
+    )
+
+
+class Drop(Base):
+    """Подборка вещей, публикуемая одним альбомом.
+
+    Telegram кладёт в медиагруппу не больше 10 файлов, поэтому берём по
+    одному фото с вещи и ограничиваем состав.
+    """
+
+    __tablename__ = "drops"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = _created()
+
+
+class DropItem(Base):
+    """Вещь в подборке. position задаёт порядок в альбоме."""
+
+    __tablename__ = "drop_items"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    drop_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("drops.id"), index=True
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("items.id"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("drop_id", "item_id", name="uq_drop_item"),
     )

@@ -335,3 +335,18 @@ class ChannelUpdateOne(BaseModel):
     title: str | None = Field(None, max_length=120)
     signature: str | None = Field(None, max_length=120)
     enabled: bool | None = None
+
+
+# --------------------------- Подборки (дропы) --------------------------- #
+class DropCreate(BaseModel):
+    item_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=10)
+    title: str | None = Field(None, max_length=120)
+    note: str | None = Field(None, max_length=500)
+
+
+class DropOut(BaseModel):
+    id: uuid.UUID
+    title: str | None = None
+    item_count: int
+    with_photo: int
+    channels: int

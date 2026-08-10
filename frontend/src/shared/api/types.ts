@@ -289,6 +289,15 @@ export interface CaptureStatus {
   error: string | null
 }
 
+/** Результат создания подборки. */
+export interface DropOut {
+  id: string
+  title: string | null
+  item_count: number
+  with_photo: number
+  channels: number
+}
+
 /** Поля фильтров списка склада. */
 export interface ItemFilters {
   status?: ItemStatus | null

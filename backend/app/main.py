@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import analytics, channels, items, media, stores, templates
+from .routers import analytics, channels, drops, items, media, stores, templates
 
 settings = get_settings()
 log = logging.getLogger("api")
@@ -34,6 +34,7 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS reactions INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS subscriptions_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS sub_id UUID",
+    "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS drop_id UUID",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_chat_id BIGINT",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_message_id BIGINT",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
@@ -46,6 +47,7 @@ _ENSURE_ENUM_VALUES = (
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'EDIT_CAPTION'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'BUMP'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'NOTIFY_SUB'",
+    "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'DROP_POST'",
     "ALTER TYPE job_status_enum ADD VALUE IF NOT EXISTS 'AWAITING'",
 )
 
@@ -144,3 +146,4 @@ app.include_router(stores.router)
 app.include_router(media.router)
 app.include_router(templates.router)
 app.include_router(channels.router)
+app.include_router(drops.router)

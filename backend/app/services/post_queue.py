@@ -39,6 +39,7 @@ async def enqueue(
     message_id: int | None = None,
     caption_prefix: str | None = None,
     sub_id: uuid.UUID | None = None,
+    drop_id: uuid.UUID | None = None,
     delay_seconds: int = 0,
 ) -> PostJob:
     """Ставит задание. Коммитит вызывающий."""
@@ -51,6 +52,7 @@ async def enqueue(
         message_id=message_id,
         caption_prefix=caption_prefix,
         sub_id=sub_id,
+        drop_id=drop_id,
         run_after=_now() + timedelta(seconds=delay_seconds),
     )
     session.add(job)

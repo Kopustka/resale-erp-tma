@@ -76,9 +76,60 @@ async def _load_context(session, job: PostJob):
     }
 
 
+async def _run_drop(session, job: PostJob) -> None:
+    """Публикация подборки альбомом: одно сообщение на фото, подпись на первом."""
+    from ..routers.items import _watermark_text
+    from . import drops
+
+    drop, items = await drops.load(session, job.drop_id)
+    if drop is None or not items:
+        await post_queue.mark_done(session, job.id)
+        return
+
+    store = (
+        await session.execute(select(Store).where(Store.id == job.store_id))
+    ).scalar_one_or_none()
+    signature = store.channel_signature if store else None
+    if job.channel_uid is not None:
+        ch = (
+            await session.execute(select(Channel).where(Channel.id == job.channel_uid))
+        ).scalar_one_or_none()
+        if ch is not None and ch.signature:
+            signature = ch.signature
+
+    wm = await _watermark_text(session, job.store_id)
+    entries = drops.photo_entries(items, wm)
+    caption = drops.build_caption(drop, items, signature)
+
+    await _respect_rate_limit(job.channel_id)
+    ids = await telegram_post.post_album(job.channel_id, entries, caption)
+
+    # Раскладываем message_id по вещам: позиция в альбоме = позиция в списке.
+    # Вещи без фото в альбом не попали, поэтому идём по тем, у кого фото есть.
+    with_photo = [it for it in items if (it.photo_file_ids or [])][: len(ids)]
+    for it, mid in zip(with_photo, ids):
+        exists = (
+            await session.execute(
+                select(ItemPost.id).where(
+                    ItemPost.item_id == it.id, ItemPost.channel_id == job.channel_uid
+                )
+            )
+        ).scalar_one_or_none()
+        if exists is None and job.channel_uid is not None:
+            session.add(
+                ItemPost(item_id=it.id, channel_id=job.channel_uid, message_id=mid)
+            )
+    await session.commit()
+    await post_queue.mark_done(session, job.id)
+
+
 async def _run_job(job: PostJob) -> None:
     async with SessionLocal() as session:
         try:
+            if job.kind == JobKind.DROP_POST:
+                await _run_drop(session, job)
+                return
+
             ctx = await _load_context(session, job)
             if ctx is None:
                 await post_queue.mark_done(session, job.id)  # вещь удалили — не ошибка

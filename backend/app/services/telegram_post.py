@@ -150,6 +150,66 @@ async def post_item(
         return _msg_id(r, group=True)
 
 
+MAX_DROP = 10
+
+
+async def post_album(
+    channel_id: str,
+    entries: list[tuple[str | None, bytes | None]],
+    caption: str,
+) -> list[int]:
+    """Публикует альбом. Возвращает message_id в порядке отправки.
+
+    entries — по одному фото на позицию: (telegram file_id, локальные байты).
+    Возвращаем список, а не одно число: подпись висит на первом сообщении,
+    но каждой вещи нужен свой message_id, иначе пометка «продано» будет
+    править чужую позицию.
+    """
+    import json as _json
+
+    media: list[dict] = []
+    files: dict[str, tuple[str, bytes]] = {}
+    for i, (file_id, data) in enumerate(entries[:MAX_DROP]):
+        m: dict = {"type": "photo"}
+        if data is not None:
+            key = f"p{i}"
+            files[key] = (f"{key}.jpg", data)
+            m["media"] = f"attach://{key}"
+        elif file_id:
+            m["media"] = file_id
+        else:
+            continue
+        if not media:
+            m["caption"] = caption[:1024]
+            m["parse_mode"] = "HTML"
+        media.append(m)
+
+    if not media:
+        raise ChannelError("В подборке нет ни одного пригодного фото")
+    if len(media) == 1:
+        m = media[0]
+        data_form = {"chat_id": channel_id, "caption": caption[:1024], "parse_mode": "HTML"}
+        async with httpx.AsyncClient(timeout=60) as client:
+            if m["media"].startswith("attach://"):
+                r = await client.post(f"{API}/sendPhoto", data=data_form, files={"photo": files["p0"]})
+            else:
+                data_form["photo"] = m["media"]
+                r = await client.post(f"{API}/sendPhoto", data=data_form)
+        mid = _msg_id(r)
+        return [mid] if mid else []
+
+    async with httpx.AsyncClient(timeout=90) as client:
+        r = await client.post(
+            f"{API}/sendMediaGroup",
+            data={"chat_id": channel_id, "media": _json.dumps(media)},
+            files=files or None,
+        )
+    data = r.json()
+    if not data.get("ok"):
+        raise ChannelError(data.get("description", f"HTTP {r.status_code}"))
+    return [m["message_id"] for m in data["result"]]
+
+
 def _msg_id(r: httpx.Response, group: bool = False) -> int | None:
     data = r.json()
     if not data.get("ok"):

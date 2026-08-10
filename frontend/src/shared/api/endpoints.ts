@@ -9,6 +9,7 @@ import type {
   ChannelCreate,
   ChannelPatch,
   ChannelSettings,
+  DropOut,
   ChannelUpdate,
   Currency,
   InviteOut,
@@ -151,6 +152,13 @@ export const templatesApi = {
 
   /** Снять сессию на сервере, чтобы бот перестал ждать пример поста. */
   cancelCapture: (token: string) => http.del<void>(`${V1}/templates/capture/${token}`),
+}
+
+// ------------------------------- Дропы ------------------------------- //
+export const dropsApi = {
+  /** Опубликовать выбранные вещи одним альбомом. */
+  create: (itemIds: string[], title?: string, note?: string) =>
+    http.post<DropOut>(`${V1}/drops`, { item_ids: itemIds, title, note }),
 }
 
 // ------------------------------- Analytics ------------------------------- //
