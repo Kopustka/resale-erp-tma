@@ -242,7 +242,7 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
       {{ items.viewArchived ? 'Архив пуст.' : 'Пусто. Добавьте первый товар кнопкой «+».' }}
     </div>
 
-    <div v-else v-bind="containerProps" class="list no-scrollbar" @scroll="onScroll">
+    <div v-else v-bind="containerProps" class="list no-scrollbar" :class="{ 'picking-mode': selecting }" @scroll="onScroll">
       <div v-bind="wrapperProps">
         <div
           v-for="row in list"
@@ -436,6 +436,9 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 40;
 }
+.list.picking-mode {
+  padding-bottom: 132px;
+}
 .row.picking {
   display: flex;
   align-items: center;
@@ -452,14 +455,17 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
   accent-color: var(--tg-theme-button-color);
 }
 .drop-bar {
-  position: absolute;
+  /* fixed, а не absolute: у .screen нет position, и absolute привязывался
+     к окну — панель уезжала под нижнее меню. Ставим над меню и выше по слою. */
+  position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  padding: 10px 12px calc(10px + var(--safe-bottom));
+  bottom: calc(var(--nav-height) + var(--safe-bottom));
+  padding: 10px 12px;
   background: var(--tg-theme-secondary-bg-color);
   border-top: 1px solid var(--tg-theme-bg-color);
-  z-index: 5;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+  z-index: 60;
 }
 .drop-title {
   width: 100%;
@@ -498,6 +504,12 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
   opacity: 0.6;
 }
 .fab-drop {
-  bottom: calc(var(--safe-bottom) + 84px);
+  /* Над кнопкой «+»: её низ = nav + safe + 16, высота 56, зазор 12.
+     Без учёта --nav-height кнопки наезжали друг на друга. */
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 84px);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
+  width: 48px;
+  height: 48px;
 }
 </style>
