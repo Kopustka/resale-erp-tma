@@ -43,7 +43,7 @@ async def main():
         await mk_item(s,sid,cid,"#B4",days_listed=90,bumped_days_ago=30)    # давно поднимали -> можно
         await mk_item(s,sid,cid,"#B5",days_listed=90,sold_marked=True)      # продан
         await mk_item(s,sid,cid,"#B6",days_listed=90,archived=True)         # в архиве
-        await mk_item(s,sid,cid,"#B7",days_listed=90,status=ItemStatus.BOOKED)  # забронирован
+        await mk_item(s,sid,cid,"#B7",days_listed=90,status=ItemStatus.PHOTOGRAPHED)  # не выставлен
         await mk_item(s,sid,cid,"#B8",days_listed=90,with_post=False)       # не публиковался
         await s.commit()
     try:

@@ -36,16 +36,18 @@ from .db import Base
 # Перечисления
 # --------------------------------------------------------------------------- #
 class ItemStatus(str, enum.Enum):
-    BOUGHT = "BOUGHT"            # Куплен
-    PREPARING = "PREPARING"     # Подготовка (стирка/ремонт)
+    """Пять состояний вещи.
+
+    Значения BOOKED/SOLD/COMPLETED/CANCELLED/RETURNED убраны из домена.
+    В типе job_kind_enum PostgreSQL их метки остаются (удалять значения из
+    enum СУБД нельзя), но строк с ними в таблицах нет — перенесены миграцией.
+    """
+
+    BOUGHT = "BOUGHT"              # Куплен
+    PREPARING = "PREPARING"        # Подготовка (стирка/ремонт)
     PHOTOGRAPHED = "PHOTOGRAPHED"  # Сфотографирован
-    LISTED = "LISTED"           # Выставлен (тикает счётчик дней)
-    BOOKED = "BOOKED"           # Забронирован
-    SOLD = "SOLD"               # Продан
-    SHIPPED = "SHIPPED"         # Отправлен
-    COMPLETED = "COMPLETED"     # Завершён
-    CANCELLED = "CANCELLED"     # Отменён (сделка сорвалась)
-    RETURNED = "RETURNED"       # Возврат
+    LISTED = "LISTED"              # Выставлен (тикает счётчик дней)
+    SHIPPED = "SHIPPED"            # Отправлен = продан
 
 
 class Role(str, enum.Enum):

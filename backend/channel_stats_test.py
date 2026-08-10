@@ -30,7 +30,7 @@ async def main():
 
         def mk(sku, sold, price=None, days=None, archived=False):
             it=Item(store_id=st.id,sku=sku,title="T",brand="N",category="C",
-                    status=ItemStatus.SOLD if sold else ItemStatus.LISTED,
+                    status=ItemStatus.SHIPPED if sold else ItemStatus.LISTED,
                     cost_price=Decimal("50"), restore_cost=Decimal(0), delivery_cost=Decimal(0),
                     platform_fee=Decimal(0),
                     selling_price=Decimal(price) if price else None,

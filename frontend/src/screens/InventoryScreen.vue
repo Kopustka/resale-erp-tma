@@ -10,7 +10,7 @@ import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
 import { dropsApi } from '@/shared/api/endpoints'
 import type { Currency, ItemOut, ItemStatus } from '@/shared/api/types'
-import { nextStatus } from '@/shared/utils/status'
+import { nextStatus, requiresSellingPrice } from '@/shared/utils/status'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
 import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
@@ -106,8 +106,8 @@ async function onNext(item: ItemOut): Promise<void> {
   const target = nextStatus(item.status)
   if (!target) return
   hapticImpact('light')
-  // При продаже всегда спрашиваем цену/валюту (если ещё не проставлена фактическая).
-  if (target === 'SOLD' && (item.selling_price === null || item.selling_price === undefined)) {
+  // «Отправлен» = продано: спрашиваем цену, если фактическая не проставлена.
+  if (requiresSellingPrice(target) && (item.selling_price === null || item.selling_price === undefined)) {
     priceItem.value = item
     priceOpen.value = true
     return
@@ -120,7 +120,7 @@ async function onConfirmPrice(price: number, currency: Currency): Promise<void> 
   const item = priceItem.value
   if (!item) return
   const ok = await items.applyStatus(item, {
-    targetStatus: 'SOLD',
+    targetStatus: 'SHIPPED',
     sellingPrice: price,
     sellingCurrency: currency,
   })

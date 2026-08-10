@@ -10,7 +10,7 @@ def chk(c,n,e=""):
 
 ITEM={"length_cm":72,"width_cm":58,"sleeve_cm":65,"size":"L","price":150,
       "currency":"Br","condition":"8/10","status":"LISTED"}
-SOLD={**ITEM,"status":"SOLD"}
+SOLD={**ITEM,"status":"SHIPPED"}
 BARE={"status":"LISTED"}   # ничего не заполнено
 
 print("\n[1] Распознавание вопросов")

@@ -13,7 +13,12 @@ import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
 import { nav, closeOverlay } from '@/app/navigation'
 import { hapticImpact, hapticNotify } from '@/shared/telegram/webapp'
-import { allowedTransitions, prevStatus, STATUS_LABELS } from '@/shared/utils/status'
+import {
+  allowedTransitions,
+  prevStatus,
+  requiresSellingPrice,
+  STATUS_LABELS,
+} from '@/shared/utils/status'
 import { copyText } from '@/shared/utils/clipboard'
 import { baseSymbol } from '@/shared/utils/format'
 import { CURRENCIES, type Currency, type ItemStatus, type ItemUpdate } from '@/shared/api/types'
@@ -160,9 +165,9 @@ async function save(): Promise<void> {
 async function changeStatus(target: ItemStatus): Promise<void> {
   const it = item.value
   if (!it || busy.value) return
-  // Продажа требует цену: берём из формы или из уже сохранённой.
+  // Отправка = продажа, поэтому требует цену: из формы или уже сохранённую.
   let sellingPrice: number | undefined
-  if (target === 'SOLD') {
+  if (requiresSellingPrice(target)) {
     sellingPrice = toNumber(form.selling_price)
     if (sellingPrice === undefined && (it.selling_price === null || it.selling_price === undefined)) {
       toast.error('Впишите цену продажи в блоке «Финансы»')

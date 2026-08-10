@@ -132,7 +132,7 @@ class AnalyticsRepository:
         return out
 
     async def turnover(self, store_id: uuid.UUID) -> list[dict]:
-        """Средние дни LISTED->SOLD по месяцам и категориям (из аудит-логов)."""
+        """Средние дни от выставления до отправки, по месяцам и категориям."""
         listed = (
             select(
                 ItemStatusLog.item_id,
@@ -147,7 +147,7 @@ class AnalyticsRepository:
                 ItemStatusLog.item_id,
                 func.min(ItemStatusLog.created_at).label("sold_at"),
             )
-            .where(ItemStatusLog.new_status == ItemStatus.SOLD)
+            .where(ItemStatusLog.new_status == ItemStatus.SHIPPED)
             .group_by(ItemStatusLog.item_id)
             .subquery()
         )
@@ -204,7 +204,7 @@ class AnalyticsRepository:
                     Item.store_id == store_id,
                     Item.archived_at.is_(None),
                     Item.status.notin_(
-                        [ItemStatus.COMPLETED, ItemStatus.CANCELLED, ItemStatus.RETURNED]
+                        [ItemStatus.SHIPPED]
                     ),
                 )
             )

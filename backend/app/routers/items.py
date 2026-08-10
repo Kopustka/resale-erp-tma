@@ -454,7 +454,7 @@ async def patch_status(
 
     # Цена продажи с валютой -> база. Если не передана — берём list_price/прежнюю.
     sell_base = sell_orig = sell_cur = None
-    if target == ItemStatus.SOLD:
+    if target == ItemStatus.SHIPPED:
         sell_cur = (payload.selling_currency or item.price_currency or base).upper()
         if payload.selling_price is not None:
             sell_orig = payload.selling_price
@@ -463,7 +463,7 @@ async def patch_status(
         elif item.list_price_orig is not None:
             sell_orig, sell_cur = item.list_price_orig, item.price_currency
         if sell_orig is None:
-            raise HTTPException(422, "selling_price required for SOLD")
+            raise HTTPException(422, "Для отправки нужна цена продажи")
         sell_base = await fx.convert(sell_orig, sell_cur, base)
 
     ok = await repo.apply_status(

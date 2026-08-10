@@ -23,7 +23,8 @@ TOPICS: list[tuple[str, re.Pattern[str]]] = [
     ("available", re.compile(r"актуальн|в\s+наличии|ещ[её]\s+есть|продан|свободн|заберу|беру", re.I)),
 ]
 
-SOLD_STATUSES_STR = {"SOLD", "SHIPPED", "COMPLETED"}
+# «Отправлен» — единственное состояние проданной вещи.
+SOLD_STATUSES_STR = {"SHIPPED"}
 
 
 def detect_topics(text: str) -> list[str]:

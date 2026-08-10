@@ -75,6 +75,15 @@ _BACKFILL = (
         SELECT 1 FROM channels c WHERE c.store_id = s.id AND c.chat_id = s.channel_id
       )
     """,
+    # Схлопывание статусов до пяти. Значения из enum PostgreSQL удалить
+    # нельзя, поэтому переносим строки: «продан» и «завершён» становятся
+    # «отправлен», бронь и отмена возвращаются в «выставлен», возврат — тоже.
+    "UPDATE items SET status='SHIPPED' WHERE status IN ('SOLD','COMPLETED')",
+    "UPDATE items SET status='LISTED' WHERE status IN ('BOOKED','CANCELLED','RETURNED')",
+    "UPDATE item_status_logs SET new_status='SHIPPED' WHERE new_status IN ('SOLD','COMPLETED')",
+    "UPDATE item_status_logs SET new_status='LISTED' WHERE new_status IN ('BOOKED','CANCELLED','RETURNED')",
+    "UPDATE item_status_logs SET old_status='SHIPPED' WHERE old_status IN ('SOLD','COMPLETED')",
+    "UPDATE item_status_logs SET old_status='LISTED' WHERE old_status IN ('BOOKED','CANCELLED','RETURNED')",
     # 2. Уже опубликованные посты -> item_posts, чтобы пометка «продано»
     #    и защита от повторной публикации продолжали работать.
     """

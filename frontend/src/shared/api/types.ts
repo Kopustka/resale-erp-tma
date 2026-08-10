@@ -5,12 +5,7 @@ export type ItemStatus =
   | 'PREPARING'
   | 'PHOTOGRAPHED'
   | 'LISTED'
-  | 'BOOKED'
-  | 'SOLD'
   | 'SHIPPED'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'RETURNED'
 
 export type Role = 'OWNER' | 'EMPLOYEE' | 'ANALYST'
 

@@ -134,7 +134,7 @@ class ItemRepository:
         }
         if new_status == ItemStatus.LISTED and listed_is_empty:
             values["listed_date"] = now
-        if new_status == ItemStatus.SOLD:
+        if new_status == ItemStatus.SHIPPED:
             values["sold_date"] = now
             if selling_price is not None:
                 values["selling_price"] = selling_price

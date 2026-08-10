@@ -1,52 +1,49 @@
-"""Конечный автомат статусов товара."""
+"""Конечный автомат статусов товара.
+
+Пять состояний: куплен -> подготовка -> отфотографирован -> выставлен ->
+отправлен. «Отправлен» — терминал и одновременно признак продажи: именно
+от него считаются прибыль, окупаемость и оборачиваемость.
+"""
 from ..models import ItemStatus
 
 S = ItemStatus
 
-# Матрица разрешённых переходов: прямые (happy path) + аварийные/обратные
-# + откат на шаг назад (случайный свайп можно отменить).
+# Матрица переходов: шаг вперёд по цепочке и шаг назад (случайный свайп
+# должен отменяться). Прыжки через этап разрешены только вперёд — из
+# «куплен» сразу в «отфотографирован», если подготовка не нужна.
 ALLOWED_TRANSITIONS: dict[ItemStatus, set[ItemStatus]] = {
-    S.BOUGHT: {S.PREPARING, S.PHOTOGRAPHED, S.CANCELLED},
-    S.PREPARING: {S.PHOTOGRAPHED, S.CANCELLED, S.BOUGHT},
-    S.PHOTOGRAPHED: {S.LISTED, S.CANCELLED, S.PREPARING},
-    S.LISTED: {S.BOOKED, S.SOLD, S.CANCELLED, S.PHOTOGRAPHED},
-    S.BOOKED: {S.SOLD, S.LISTED, S.CANCELLED},   # бронь может сорваться → снова LISTED
-    S.SOLD: {S.SHIPPED, S.RETURNED, S.CANCELLED, S.BOOKED},
-    S.SHIPPED: {S.COMPLETED, S.RETURNED, S.SOLD},
-    S.COMPLETED: {S.RETURNED, S.SHIPPED},
-    S.RETURNED: {S.LISTED, S.PREPARING},         # вернули → снова в оборот
-    S.CANCELLED: {S.LISTED},                      # реанимация отменённого
+    S.BOUGHT: {S.PREPARING, S.PHOTOGRAPHED},
+    S.PREPARING: {S.PHOTOGRAPHED, S.BOUGHT},
+    S.PHOTOGRAPHED: {S.LISTED, S.PREPARING},
+    S.LISTED: {S.SHIPPED, S.PHOTOGRAPHED},
+    S.SHIPPED: {S.LISTED},  # ошиблись с отправкой — вернуть в продажу
 }
 
-# Откат на шаг назад по happy path (отмена случайного перехода).
+# Откат на шаг назад по основной цепочке.
 PREV_STATUS: dict[ItemStatus, ItemStatus] = {
     S.PREPARING: S.BOUGHT,
     S.PHOTOGRAPHED: S.PREPARING,
     S.LISTED: S.PHOTOGRAPHED,
-    S.BOOKED: S.LISTED,
-    S.SOLD: S.BOOKED,
-    S.SHIPPED: S.SOLD,
-    S.COMPLETED: S.SHIPPED,
+    S.SHIPPED: S.LISTED,
 }
 
 # Статусы «до листинга» и «до продажи» — при откате в них сбрасываются даты.
 PRE_LISTED = {S.BOUGHT, S.PREPARING, S.PHOTOGRAPHED}
-PRE_SOLD = PRE_LISTED | {S.LISTED, S.BOOKED}
+PRE_SOLD = PRE_LISTED | {S.LISTED}
 
-# «Следующий логический статус» для свайпа вправо (happy path).
+# «Следующий логический статус» для свайпа вправо.
 NEXT_STATUS: dict[ItemStatus, ItemStatus] = {
     S.BOUGHT: S.PREPARING,
     S.PREPARING: S.PHOTOGRAPHED,
     S.PHOTOGRAPHED: S.LISTED,
-    S.LISTED: S.BOOKED,
-    S.BOOKED: S.SOLD,
-    S.SOLD: S.SHIPPED,
-    S.SHIPPED: S.COMPLETED,
+    S.LISTED: S.SHIPPED,
 }
 
-# Статусы, исключаемые из прибыли/аналитики продаж.
-NON_REALIZED = {S.RETURNED, S.CANCELLED}
-SOLD_STATUSES = {S.SOLD, S.SHIPPED, S.COMPLETED}
+# Статусов «сделка не состоялась» больше нет: возврат и отмена убраны.
+NON_REALIZED: set[ItemStatus] = set()
+# Признак продажи. Раньше сюда входили SOLD и COMPLETED — теперь их нет,
+# и «отправлен» стал единственным состоянием проданной вещи.
+SOLD_STATUSES = {S.SHIPPED}
 
 
 def can_transition(current: ItemStatus, target: ItemStatus) -> bool:
