@@ -42,7 +42,8 @@ async def main():
             chk(r.status_code==201, "создан", f"{r.status_code} {r.text[:150]}")
             pid=r.json()["id"]
             async with SessionLocal() as s:
-                job=(await s.execute(select(PostJob).where(PostJob.custom_post_id!=None))).scalars().first()
+                job=(await s.execute(select(PostJob).where(
+                    PostJob.custom_post_id!=None, PostJob.store_id==sid))).scalars().first()
             chk(job is not None and job.status==JobStatus.PENDING, "задание поставлено")
             chk(job.run_after > datetime.now(timezone.utc)+timedelta(hours=2),
                 "запуск отложен на нужное время", str(job.run_after))

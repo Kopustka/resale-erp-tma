@@ -53,10 +53,13 @@ def apply(image_bytes: bytes, text: str) -> bytes:
     if not text:
         return image_bytes
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageDraw, ImageOps
 
         with Image.open(io.BytesIO(image_bytes)) as src:
-            img = src.convert("RGB")
+            # Телефоны пишут кадр «лёжа» и добавляют EXIF-тег поворота.
+            # Pillow при пересохранении тег теряет, и вертикальное фото
+            # уходило в канал горизонтальным. Разворачиваем пиксели явно.
+            img = ImageOps.exif_transpose(src).convert("RGB")
             if max(img.size) > MAX_SIDE:
                 img.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)
 

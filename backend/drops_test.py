@@ -52,7 +52,8 @@ async def main():
             chk(r.status_code==201, "создан", f"{r.status_code} {r.text[:150]}")
             d=r.json(); chk(d["item_count"]==2 and d["channels"]==1, "состав и каналы", str(d))
             async with SessionLocal() as s:
-                jobs=(await s.execute(select(PostJob).where(PostJob.kind==JobKind.DROP_POST))).scalars().all()
+                jobs=(await s.execute(select(PostJob).where(
+                    PostJob.kind==JobKind.DROP_POST, PostJob.store_id==sid))).scalars().all()
             chk(len(jobs)==1 and jobs[0].drop_id is not None, "задание поставлено", str(len(jobs)))
 
             print("\n[2] Проверки на входе")
