@@ -452,6 +452,13 @@ async def patch_status(
     ).scalar_one_or_none()
     base = (store.base_currency if store else "BYN").upper()
 
+    # В канал не выпускаем вещь без ценника: пост с «Цена — в личные
+    # сообщения» вместо суммы обесценивает витрину, а покупатель уходит.
+    if target == ItemStatus.LISTED and item.list_price_orig is None:
+        raise HTTPException(
+            422, "Укажите цену продажи — без неё вещь нельзя выставить в канал"
+        )
+
     # Цена продажи с валютой -> база. Если не передана — берём list_price/прежнюю.
     sell_base = sell_orig = sell_cur = None
     if target == ItemStatus.SHIPPED:

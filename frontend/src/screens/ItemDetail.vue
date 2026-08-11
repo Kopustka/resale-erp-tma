@@ -16,6 +16,7 @@ import { hapticImpact, hapticNotify } from '@/shared/telegram/webapp'
 import {
   allowedTransitions,
   prevStatus,
+  requiresListPrice,
   requiresSellingPrice,
   STATUS_LABELS,
 } from '@/shared/utils/status'
@@ -165,6 +166,14 @@ async function save(): Promise<void> {
 async function changeStatus(target: ItemStatus): Promise<void> {
   const it = item.value
   if (!it || busy.value) return
+  // Выставление требует цену в объявлении: без неё пост уйдёт без суммы.
+  if (requiresListPrice(target)) {
+    const listed = toNumber(form.list_price) ?? it.list_price
+    if (listed === null || listed === undefined) {
+      toast.error('Укажите цену продажи в блоке «Цена продажи» — без неё нельзя выставить')
+      return
+    }
+  }
   // Отправка = продажа, поэтому требует цену: из формы или уже сохранённую.
   let sellingPrice: number | undefined
   if (requiresSellingPrice(target)) {

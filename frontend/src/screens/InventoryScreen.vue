@@ -10,7 +10,7 @@ import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
 import { dropsApi } from '@/shared/api/endpoints'
 import type { Currency, ItemOut, ItemStatus } from '@/shared/api/types'
-import { nextStatus, requiresSellingPrice } from '@/shared/utils/status'
+import { nextStatus, requiresListPrice, requiresSellingPrice } from '@/shared/utils/status'
 import { hapticImpact, hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
 import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
@@ -105,6 +105,12 @@ const priceItem = ref<ItemOut | null>(null)
 async function onNext(item: ItemOut): Promise<void> {
   const target = nextStatus(item.status)
   if (!target) return
+  // Без цены в объявлении в канал не выпускаем — предупреждаем и не двигаем.
+  if (requiresListPrice(target) && (item.list_price === null || item.list_price === undefined)) {
+    hapticNotify('error')
+    toast.error(`${item.brand} ${item.sku}: укажите цену продажи — без неё нельзя выставить`)
+    return
+  }
   hapticImpact('light')
   // «Отправлен» = продано: спрашиваем цену, если фактическая не проставлена.
   if (requiresSellingPrice(target) && (item.selling_price === null || item.selling_price === undefined)) {

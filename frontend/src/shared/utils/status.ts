@@ -72,6 +72,14 @@ export function requiresSellingPrice(target: ItemStatus): boolean {
   return target === 'SHIPPED'
 }
 
+/**
+ * Требует ли переход указанной цены в объявлении.
+ * В канал не выпускаем вещь без ценника — пост без суммы бесполезен.
+ */
+export function requiresListPrice(target: ItemStatus): boolean {
+  return target === 'LISTED'
+}
+
 /** Список всех статусов для фильтра. */
 export const ALL_STATUSES: ItemStatus[] = [
   'BOUGHT',

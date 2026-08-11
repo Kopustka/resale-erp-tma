@@ -47,6 +47,14 @@ async def create_drop(
     if not with_photo:
         raise HTTPException(422, "Ни у одной вещи нет фото — альбом собрать не из чего")
 
+    # Дроп — та же публикация в канал, правило про ценник действует и здесь.
+    no_price = [found[i].sku for i in ids if found[i].list_price_orig is None]
+    if no_price:
+        raise HTTPException(
+            422,
+            "Без цены нельзя выставить: " + ", ".join(no_price),
+        )
+
     drop = Drop(
         store_id=member.store_id,
         title=(payload.title or "").strip() or None,
