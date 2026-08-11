@@ -261,6 +261,33 @@ async def _run_job(job: PostJob) -> None:
                 )
                 await session.commit()
 
+            elif job.kind == JobKind.UNPUBLISH:
+                # Вещь вернули до «выставлен» — пост в канале висеть не должен,
+                # иначе состояние расходится и повторная публикация молча
+                # пропускается защитой от дублей.
+                if job.message_id is not None:
+                    await _respect_rate_limit(job.channel_id)
+                    await telegram_post.delete_message(job.channel_id, job.message_id)
+                await session.execute(
+                    ItemPost.__table__.delete().where(
+                        ItemPost.item_id == job.item_id,
+                        ItemPost.channel_id == job.channel_uid,
+                    )
+                )
+                # legacy-поле держим в согласии с item_posts
+                left = (
+                    await session.execute(
+                        select(ItemPost.message_id).where(ItemPost.item_id == job.item_id)
+                    )
+                ).scalars().first()
+                await session.execute(
+                    update(Item)
+                    .where(Item.id == job.item_id)
+                    .values(channel_message_id=left)
+                    .execution_options(synchronize_session=False)
+                )
+                await session.commit()
+
             elif job.kind == JobKind.NOTIFY_SUB:
                 from .preview import notify_subscriber
 

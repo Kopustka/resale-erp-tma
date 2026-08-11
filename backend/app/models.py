@@ -378,6 +378,7 @@ class JobKind(str, enum.Enum):
     NOTIFY_SUB = "NOTIFY_SUB"    # уведомить подписчика о подходящей новинке
     DROP_POST = "DROP_POST"      # опубликовать несколько вещей одним альбомом
     CUSTOM_POST = "CUSTOM_POST"  # свободный пост без привязки к вещи
+    UNPUBLISH = "UNPUBLISH"      # снять вещь с публикации (откат из «выставлен»)
 
 
 class JobStatus(str, enum.Enum):

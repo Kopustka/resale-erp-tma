@@ -43,7 +43,7 @@ from ..services.ai_describe import (
     AiNotConfigured,
     generate_item_description,
 )
-from ..services.fsm import SOLD_STATUSES, can_transition, next_status
+from ..services.fsm import PRE_LISTED, SOLD_STATUSES, can_transition, next_status
 from ..services.voice_parser import parse_item_voice
 
 settings = get_settings()
@@ -490,6 +490,11 @@ async def patch_status(
             await subscriptions.enqueue_notifications(session, member.store_id, fresh)
     elif target in SOLD_STATUSES:
         await _enqueue_mark_sold(session, member.store_id, item_id)
+    elif target in PRE_LISTED:
+        # Вернули до «выставлен» — снимаем посты с каналов. Иначе вещь
+        # числится неопубликованной, но висит, и повторное выставление
+        # молча пропускается защитой от дублей.
+        await _enqueue_unpublish(session, member.store_id, item_id)
 
     out = to_out(fresh, show_finance=_can_see_finance(member))
     await idempotency.store_result(scope, idempotency_key, out.model_dump(mode="json"))
@@ -608,6 +613,43 @@ async def _enqueue_publish(
             .execution_options(synchronize_session=False)
         )
         await session.commit()
+
+
+async def _enqueue_unpublish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:
+    """Снимает вещь с публикации во всех каналах, где она висит."""
+    rows = (
+        await session.execute(
+            select(ItemPost, Channel)
+            .join(Channel, Channel.id == ItemPost.channel_id)
+            .where(ItemPost.item_id == item_id)
+        )
+    ).all()
+    if not rows:
+        return
+    queued = set(
+        (
+            await session.execute(
+                select(PostJob.channel_uid).where(
+                    PostJob.item_id == item_id,
+                    PostJob.kind == JobKind.UNPUBLISH,
+                    PostJob.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+                )
+            )
+        ).scalars().all()
+    )
+    for post, ch in rows:
+        if ch.id in queued:
+            continue
+        await post_queue.enqueue(
+            session,
+            store_id=store_id,
+            kind=JobKind.UNPUBLISH,
+            channel_id=ch.chat_id,
+            channel_uid=ch.id,
+            item_id=item_id,
+            message_id=post.message_id,
+        )
+    await session.commit()
 
 
 async def _enqueue_price_edit(
