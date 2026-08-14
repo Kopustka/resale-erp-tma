@@ -11,13 +11,14 @@ import uuid
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import Query, APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_active_membership
 from ..config import get_settings
+from ..services import thumbs
 from ..db import get_session
 from ..models import Item, Role, StoreMember
 
@@ -79,7 +80,7 @@ async def upload_media(
     return {"photo_id": f"{LOCAL_PREFIX}{name}"}
 
 
-def _serve_local(entry: str) -> FileResponse:
+def _serve_local(entry: str, width: int | None = None) -> FileResponse:
     name = entry[len(LOCAL_PREFIX):]
     # защита от path traversal
     if "/" in name or "\\" in name or ".." in name:
@@ -87,6 +88,10 @@ def _serve_local(entry: str) -> FileResponse:
     path = MEDIA_DIR / name
     if not path.exists():
         raise HTTPException(404, "Media file missing")
+    if width is not None:
+        thumb = thumbs.for_local(name, width)
+        if thumb is not None:
+            path = thumb
     return FileResponse(
         path,
         headers={"Cache-Control": f"public, max-age={settings.media_cache_ttl}, immutable"},
@@ -97,6 +102,7 @@ def _serve_local(entry: str) -> FileResponse:
 async def get_media(
     item_id: uuid.UUID,
     index: int,
+    w: int | None = Query(None, description="ширина миниатюры; без неё — оригинал"),
     member: StoreMember = Depends(get_active_membership),
     session: AsyncSession = Depends(get_session),
 ):
@@ -108,12 +114,15 @@ async def get_media(
     if item is None or index >= len(item.photo_file_ids or []):
         raise HTTPException(404, "Photo not found")
 
+    width = thumbs.normalize_width(w)
     entry = item.photo_file_ids[index]
     if entry.startswith(LOCAL_PREFIX):
-        return _serve_local(entry)
+        return _serve_local(entry, width)
 
     # Telegram file_id
     content, ctype = await _fetch_telegram_file(entry)
+    if width is not None:
+        content, ctype = thumbs.for_bytes(entry, content, width), "image/jpeg"
     return Response(
         content=content,
         media_type=ctype,

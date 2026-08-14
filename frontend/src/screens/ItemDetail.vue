@@ -332,7 +332,13 @@ const photoIndexes = computed(() =>
       <!-- Фото -->
       <div v-if="photoIndexes.length" class="photos no-scrollbar">
         <div v-for="i in photoIndexes" :key="i" class="photo">
-          <AuthImage :item-id="item.id" :index="i" :photo-count="item.photo_count" :alt="item.title" />
+          <AuthImage
+            :item-id="item.id"
+            :index="i"
+            :photo-count="item.photo_count"
+            :alt="item.title"
+            :width="1200"
+          />
         </div>
       </div>
 

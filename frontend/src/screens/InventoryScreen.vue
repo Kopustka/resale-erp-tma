@@ -102,6 +102,17 @@ function resetFilters(): void {
 const priceOpen = ref(false)
 const priceItem = ref<ItemOut | null>(null)
 
+/**
+ * Возврат в мини-апп после чата с ботом. Пока пользователь подтверждал
+ * предпросмотр или отвечал в комментариях, данные могли уйти вперёд —
+ * подтягиваем их, чтобы не приходилось перезагружать страницу.
+ */
+function onVisible(): void {
+  if (document.visibilityState === 'visible' && nav.overlay === null) {
+    void items.refresh()
+  }
+}
+
 async function onNext(item: ItemOut): Promise<void> {
   const target = nextStatus(item.status)
   if (!target) return
@@ -183,7 +194,12 @@ onMounted(() => {
   if (itemList.value.length === 0) void items.loadFirst()
 })
 
-onBeforeUnmount(() => window.clearTimeout(searchTimer))
+document.addEventListener('visibilitychange', onVisible)
+
+onBeforeUnmount(() => {
+  window.clearTimeout(searchTimer)
+  document.removeEventListener('visibilitychange', onVisible)
+})
 </script>
 
 <template>

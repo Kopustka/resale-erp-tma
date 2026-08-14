@@ -14,6 +14,11 @@ const props = withDefaults(
     index?: number
     photoCount?: number
     alt?: string
+    /**
+     * Ширина миниатюры. Без неё сервер отдаёт оригинал с телефона —
+     * в списке это мегабайты на строку высотой в сотню пикселей.
+     */
+    width?: number
   }>(),
   { index: 0, photoCount: 1, alt: '' },
 )
@@ -43,7 +48,10 @@ async function load(): Promise<void> {
   failed.value = false
   controller = new AbortController()
   try {
-    const blob = await fetchBlob(mediaPath(props.itemId, props.index), controller.signal)
+    const blob = await fetchBlob(
+      mediaPath(props.itemId, props.index, props.width),
+      controller.signal,
+    )
     revoke()
     objectUrl = URL.createObjectURL(blob)
     url.value = objectUrl

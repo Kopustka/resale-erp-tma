@@ -181,6 +181,7 @@ export const analyticsApi = {
 }
 
 /** Путь медиа для AuthImage (грузится через fetchBlob c заголовком initData). */
-export function mediaPath(itemId: string, index: number): string {
-  return `${V1}/media/${itemId}/${index}`
+export function mediaPath(itemId: string, index: number, width?: number): string {
+  const base = `${V1}/media/${itemId}/${index}`
+  return width ? `${base}?w=${width}` : base
 }

@@ -17,6 +17,17 @@ import { useToastStore } from './toast'
 const PAGE_LIMIT = 30
 const UNDO_MS = 5000
 
+/**
+ * Вещи, по которым смена статуса уже в полёте. Без этого второй свайп
+ * уходил со старой версией (ответ ещё не пришёл, локальная не обновилась)
+ * и сервер отвечал 409 — визуально это выглядело как «ничего не произошло».
+ */
+const inFlight = new Set<string>()
+
+/** Не чаще одной тихой пересинхронизации в 3 секунды. */
+const REFRESH_THROTTLE_MS = 3000
+let lastRefresh = 0
+
 interface PendingArchive {
   item: ItemOut
   index: number
@@ -145,6 +156,8 @@ export const useItemsStore = defineStore('items', {
         return false
       }
 
+      if (inFlight.has(item.id)) return false  // второй свайп до ответа — глушим
+
       const idx = this.items.findIndex((i) => i.id === item.id)
       if (idx === -1) return false
       const current = this.items[idx]
@@ -160,18 +173,37 @@ export const useItemsStore = defineStore('items', {
       current.status = target
       if (opts.sellingPrice !== undefined) current.selling_price = opts.sellingPrice
 
-      const key = uuid()
+      inFlight.add(item.id)
       try {
-        const fresh = await itemsApi.patchStatus(
-          item.id,
-          {
-            target_status: target,
-            version: snapshot.version,
-            selling_price: opts.sellingPrice,
-            selling_currency: opts.sellingCurrency,
-          },
-          key,
-        )
+        const send = (version: number, key: string) =>
+          itemsApi.patchStatus(
+            item.id,
+            {
+              target_status: target,
+              version,
+              selling_price: opts.sellingPrice,
+              selling_currency: opts.sellingCurrency,
+            },
+            key,
+          )
+
+        let fresh: ItemOut
+        try {
+          fresh = await send(snapshot.version, uuid())
+        } catch (e) {
+          // Версия устарела (правку сделали в карточке или в другой вкладке).
+          // Это не повод терять действие пользователя: перечитываем вещь и
+          // повторяем один раз с актуальной версией.
+          if (!(e instanceof ApiError && e.isConflict)) throw e
+          const actual = await itemsApi.get(item.id)
+          if (actual.status === target) {
+            const at = this.items.findIndex((i) => i.id === item.id)
+            if (at !== -1) this.items.splice(at, 1, actual)
+            return true  // кто-то уже перевёл в нужный статус — цель достигнута
+          }
+          fresh = await send(actual.version, uuid())
+        }
+
         // Заменяем на серверную версию (актуальные version, net_profit, roi и т.д.).
         const at = this.items.findIndex((i) => i.id === item.id)
         if (at !== -1) this.items.splice(at, 1, fresh)
@@ -187,15 +219,52 @@ export const useItemsStore = defineStore('items', {
           it.sold_date = snapshot.sold_date
         }
 
+        // Сообщение сервера точнее любого локального: там и про цену,
+        // и про недопустимый переход.
         if (e instanceof ApiError && e.isConflict) {
-          toast.error('Конфликт версий — перезагружаю карточку')
+          toast.error('Данные разошлись — обновил карточку, повторите')
           await this.reloadItem(item.id)
-        } else if (e instanceof ApiError && e.isUnprocessable) {
-          toast.error('Нужна цена продажи для «Продан»')
         } else {
           toast.error(e instanceof Error ? e.message : 'Не удалось сменить статус')
         }
         return false
+      } finally {
+        inFlight.delete(item.id)
+      }
+    },
+
+    /**
+     * Тихая пересинхронизация первой страницы: обновляет уже показанные
+     * карточки на месте, не сбрасывая прокрутку. Если состав изменился
+     * (появились или исчезли вещи) — перезагружает список целиком.
+     *
+     * Нужна при возврате в мини-апп: пока пользователь был в чате с ботом
+     * (подтверждал предпросмотр, отвечал в комментариях), данные могли уйти
+     * вперёд, и раньше это лечилось только перезагрузкой страницы.
+     */
+    async refresh(): Promise<void> {
+      if (this.loading) return
+      const now = Date.now()
+      if (now - lastRefresh < REFRESH_THROTTLE_MS) return
+      lastRefresh = now
+      try {
+        const page = await itemsApi.list({
+          limit: PAGE_LIMIT,
+          archived: this.viewArchived,
+          ...this.filters,
+        })
+        const known = new Set(this.items.map((i) => i.id))
+        const headChanged = page.items.some((i) => !known.has(i.id))
+        if (headChanged) {
+          await this.loadFirst()
+          return
+        }
+        for (const fresh of page.items) {
+          const at = this.items.findIndex((i) => i.id === fresh.id)
+          if (at !== -1) this.items.splice(at, 1, fresh)
+        }
+      } catch {
+        /* сеть моргнула — оставляем что было, не мешаем работе */
       }
     },
 

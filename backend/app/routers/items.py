@@ -598,18 +598,45 @@ async def _enqueue_publish(
         await _default_template_body(session, store_id),
     )
     photos = list(item.photo_file_ids or [])
-    sent = await preview.send_preview(
-        actor.telegram_id,
-        item_id,
-        caption,
-        photos[0] if photos else None,
-        len(targets),
-        await _watermark_text(session, store_id),
+    # Отправка уходит в фон: внутри запроса она грузила фото в Telegram и
+    # свайп в интерфейсе залипал на несколько секунд.
+    asyncio.create_task(
+        _bg_send_preview(
+            actor.telegram_id,
+            item_id,
+            caption,
+            photos[0] if photos else None,
+            len(targets),
+            await _watermark_text(session, store_id),
+        )
     )
-    if not sent:
-        # Личку не открыли или бот заблокирован — не держим вещь в подвешенном
-        # состоянии, публикуем как обычно.
-        await session.execute(
+
+
+async def _bg_send_preview(
+    telegram_id: int,
+    item_id: uuid.UUID,
+    caption: str,
+    photo: str | None,
+    channels: int,
+    watermark: str | None,
+) -> None:
+    """Шлёт предпросмотр в личку вне HTTP-запроса.
+
+    Если доставить не удалось (бот заблокирован, диалог не начат) — снимаем
+    ожидание и публикуем как обычно: лучше пост без подтверждения, чем вещь,
+    зависшая в AWAITING навсегда.
+    """
+    try:
+        sent = await preview.send_preview(
+            telegram_id, item_id, caption, photo, channels, watermark
+        )
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("preview").warning("preview task failed: %s", e)
+        sent = False
+    if sent:
+        return
+    async with SessionLocal() as s:
+        await s.execute(
             update(PostJob)
             .where(
                 PostJob.item_id == item_id,
@@ -619,7 +646,7 @@ async def _enqueue_publish(
             .values(status=JobStatus.PENDING)
             .execution_options(synchronize_session=False)
         )
-        await session.commit()
+        await s.commit()
 
 
 async def _enqueue_unpublish(session, store_id: uuid.UUID, item_id: uuid.UUID) -> None:

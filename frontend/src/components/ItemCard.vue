@@ -198,7 +198,13 @@ onBeforeUnmount(detachScrollLock)
       @click="onClick"
     >
       <div class="photo">
-        <AuthImage :item-id="item.id" :index="0" :photo-count="item.photo_count" :alt="item.title" />
+        <AuthImage
+          :item-id="item.id"
+          :index="0"
+          :photo-count="item.photo_count"
+          :alt="item.title"
+          :width="400"
+        />
       </div>
       <div class="body">
         <div class="row-top">
