@@ -144,6 +144,7 @@ class VoiceParseResult(BaseModel):
     color: str | None = None
     condition: str | None = None
     cost_price: float | None = None
+    list_price: float | None = None
     title: str | None = None
     low_confidence: bool = False
 

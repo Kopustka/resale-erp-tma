@@ -126,6 +126,7 @@ export interface VoiceParseResult {
   color: string | null
   condition: string | null
   cost_price: number | null
+  list_price: number | null
   title: string | null
   low_confidence: boolean
 }

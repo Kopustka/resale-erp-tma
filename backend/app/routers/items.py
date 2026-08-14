@@ -37,7 +37,15 @@ from ..schemas import (
     VoiceParseRequest,
     VoiceParseResult,
 )
-from ..services import fx, idempotency, post_queue, preview, subscriptions, telegram_post
+from ..services import (
+    ai_voice,
+    fx,
+    idempotency,
+    post_queue,
+    preview,
+    subscriptions,
+    telegram_post,
+)
 from ..services.ai_describe import (
     AiGenerationError,
     AiNotConfigured,
@@ -182,6 +190,16 @@ async def parse_voice(
     """Разбор голосовой фразы в поля новой вещи (для предзаполнения формы)."""
     if member.role not in CAN_EDIT:
         raise HTTPException(403, "Role cannot create items")
+
+    # Основной путь — модель: она понимает живую речь, а не список слов.
+    try:
+        data = await ai_voice.parse_voice_ai(payload.text)
+        return VoiceParseResult(**data)
+    except ai_voice.VoiceAiUnavailable as e:
+        logging.getLogger("ai_voice").info("откат на словарный разбор: %s", e)
+
+    # Запасной путь: без ключа, при исчерпанной квоте или сбое сети функция
+    # обязана продолжать работать, пусть и хуже.
     p = parse_item_voice(payload.text)
     return VoiceParseResult(
         brand=p.brand,
@@ -191,7 +209,7 @@ async def parse_voice(
         condition=p.condition,
         cost_price=p.cost_price,
         title=p.title,
-        low_confidence=p.low_confidence,
+        low_confidence=True,  # словарь разбирает грубее — просим проверить
     )
 
 

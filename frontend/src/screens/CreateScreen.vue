@@ -164,6 +164,8 @@ async function applyVoice(text: string): Promise<void> {
     if (r.condition) form.condition = r.condition
     if (r.title && !form.title.trim()) form.title = r.title
     if (session.canSeeFinance && r.cost_price != null) form.cost_price = String(r.cost_price)
+    // Цена в объявлении нужна для публикации, поэтому подставляем её всем ролям.
+    if (r.list_price != null) form.list_price = String(r.list_price)
     manualPhrase.value = ''
     hapticNotify(r.low_confidence ? 'warning' : 'success')
     toast.success(
