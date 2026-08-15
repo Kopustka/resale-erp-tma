@@ -9,6 +9,9 @@ node_modules/
 dist/
 *.local
 
+# Модели распознавания речи (464 МБ, качаются при первом запуске)
+backend/.models/
+
 # Загруженные пользователем медиа (runtime-данные, не код)
 backend/media/*
 !backend/media/.gitkeep

@@ -10,3 +10,4 @@ aiogram==3.15.0
 httpx==0.28.1
 python-multipart==0.0.19
 Pillow==12.3.0
+faster-whisper==1.2.1

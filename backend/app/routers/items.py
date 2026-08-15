@@ -258,7 +258,7 @@ async def voice_upload(
         )
         raise HTTPException(503, detail)
 
-    transcript = result.pop("transcript", "")
+    transcript = result.get("transcript") or ""
     # Ничего не распознали — честно говорим об этом, а не отдаём пустую форму.
     if not transcript:
         raise HTTPException(422, "Речь не распознана — запишите ещё раз, ближе к микрофону")

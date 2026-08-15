@@ -129,6 +129,7 @@ export interface VoiceParseResult {
   list_price: number | null
   title: string | null
   low_confidence: boolean
+  transcript?: string | null
 }
 
 /** Сессия «надиктовать боту»: ссылка в чат + токен для опроса. */

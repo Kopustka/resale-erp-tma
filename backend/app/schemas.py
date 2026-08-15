@@ -147,6 +147,9 @@ class VoiceParseResult(BaseModel):
     list_price: float | None = None
     title: str | None = None
     low_confidence: bool = False
+    # Что именно услышал распознаватель. Показываем пользователю: если поля
+    # пустые, сразу видно — не расслышали или не разобрали.
+    transcript: str | None = None
 
 
 # --------------------------- Аналитика --------------------------- #

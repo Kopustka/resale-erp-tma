@@ -21,7 +21,7 @@ import logging
 import httpx
 
 from ..config import get_settings
-from . import gemini
+from . import gemini, stt
 
 settings = get_settings()
 log = logging.getLogger("ai_voice")
@@ -136,8 +136,19 @@ async def transcribe(data: bytes, mime: str = "audio/ogg") -> str:
 
 
 async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
-    """Запись -> поля вещи. Два шага: сначала услышать, потом разобрать."""
-    transcript = await transcribe(data, mime)
+    """Запись -> поля вещи.
+
+    Распознаём на своём сервере, наружу уходит только текст. Если локальный
+    распознаватель недоступен, отдаём звук модели — лучше медленнее, чем
+    совсем никак.
+    """
+    transcript = ""
+    try:
+        transcript = await stt.transcribe(data)
+        log.info("распознано локально: %r", transcript[:80])
+    except stt.SttError as e:
+        log.warning("локальное распознавание не вышло (%s), пробуем модель", e)
+        transcript = await transcribe(data, mime)
     if len(transcript.strip()) < 3:
         return {
             "brand": None, "category": None, "size": None, "color": None,

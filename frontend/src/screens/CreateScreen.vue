@@ -203,6 +203,9 @@ async function sendRecording(blob: Blob): Promise<void> {
   try {
     const r = await itemsApi.voiceUpload(blob)
     applyFields(r)
+    // Показываем расшифровку: если поля пустые, сразу видно, где сбой —
+    // не расслышали или не разобрали.
+    if (r.transcript) interim.value = r.transcript
     hapticNotify(r.low_confidence ? 'warning' : 'success')
     toast.success(
       r.low_confidence ? 'Заполнил что расслышал — проверь поля' : 'Поля заполнены',
