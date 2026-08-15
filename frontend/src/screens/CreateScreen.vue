@@ -91,72 +91,45 @@ function removePhoto(idx: number): void {
 }
 
 // ------------------------------ Голосовой ввод ------------------------------ //
-const RecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition
-const speechSupported = !!RecognitionCtor
+/** Записывать можно там, где есть MediaRecorder и доступ к микрофону. */
+const speechSupported =
+  typeof window !== 'undefined' &&
+  typeof MediaRecorder !== 'undefined' &&
+  !!navigator.mediaDevices?.getUserMedia
 const recognizing = ref(false)
 const parsing = ref(false)
 const interim = ref('')
 const manualPhrase = ref('')
 const showCheat = ref(false)
 
-let recognition: SpeechRecognitionLike | null = null
-/** Намерение пользователя: запись включена до повторного нажатия. */
-let wantRecording = false
-/** Речь из уже завершённых отрезков — движок обрывается на паузах. */
-let committed = ''
-/** Текущий отрезок, ещё не завершённый. */
-let segment = ''
+/**
+ * Запись голоса прямо в мини-аппе.
+ *
+ * Раньше здесь был Web Speech API: он сам распознавал речь, но в WebView
+ * Telegram недоступен или ведёт себя непредсказуемо. Теперь пишем звук
+ * через MediaRecorder и отдаём его нейросети — она и распознаёт, и
+ * раскладывает по полям. Браузеру остаётся только запись.
+ */
+let media: MediaRecorder | null = null
+let chunks: Blob[] = []
+let stream: MediaStream | null = null
 let stopTimer: number | null = null
 
 /** Предохранитель: если про запись забыли, глушим её сами. */
 const MAX_RECORDING_MS = 120_000
 
-function ensureRecognition(): SpeechRecognitionLike | null {
-  if (!RecognitionCtor) return null
-  if (recognition) return recognition
-  const rec = new RecognitionCtor()
-  rec.lang = 'ru-RU'
-  rec.continuous = true
-  rec.interimResults = true
-  rec.maxAlternatives = 1
-
-  rec.onresult = (event) => {
-    let text = ''
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      text += event.results[i][0].transcript
-    }
-    segment = text
-    interim.value = (committed + ' ' + segment).trim()
+/** Формат зависит от платформы: Chrome даёт webm, Safari — mp4. */
+function pickMime(): string {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+  for (const t of candidates) {
+    if (MediaRecorder.isTypeSupported?.(t)) return t
   }
+  return ''
+}
 
-  rec.onerror = (event) => {
-    const code = (event as unknown as { error?: string }).error
-    // Отказ в микрофоне — продолжать бессмысленно, глушим совсем.
-    if (code === 'not-allowed' || code === 'service-not-allowed') {
-      wantRecording = false
-      toast.error('Нет доступа к микрофону — разрешите его в настройках')
-    }
-    // Остальное (тишина, обрыв) лечится перезапуском в onend.
-  }
-
-  rec.onend = () => {
-    // Движок сам обрывается на паузе. Пока пользователь не нажал «стоп»,
-    // это не конец фразы — дописываем отрезок и слушаем дальше.
-    committed = (committed + ' ' + segment).trim()
-    segment = ''
-    if (wantRecording) {
-      try {
-        rec.start()
-        return
-      } catch {
-        /* перезапуск не удался — завершаем как обычно */
-      }
-    }
-    finishRecording()
-  }
-
-  recognition = rec
-  return rec
+function releaseStream(): void {
+  stream?.getTracks().forEach((t) => t.stop())
+  stream = null
 }
 
 function clearStopTimer(): void {
@@ -166,50 +139,79 @@ function clearStopTimer(): void {
   }
 }
 
-/** Свести накопленное и отправить на разбор. */
-function finishRecording(): void {
-  clearStopTimer()
-  wantRecording = false
-  recognizing.value = false
-  const text = (committed + ' ' + segment).trim()
-  committed = ''
-  segment = ''
+async function startRecording(): Promise<void> {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch {
+    toast.error('Нет доступа к микрофону — разрешите его или надиктуйте боту')
+    return
+  }
+  const mime = pickMime()
+  try {
+    media = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+  } catch {
+    releaseStream()
+    toast.error('Запись недоступна — надиктуйте боту')
+    return
+  }
+  chunks = []
+  media.ondataavailable = (e) => {
+    if (e.data && e.data.size) chunks.push(e.data)
+  }
+  media.onstop = () => {
+    releaseStream()
+    const blob = new Blob(chunks, { type: media?.mimeType || 'audio/webm' })
+    chunks = []
+    media = null
+    recognizing.value = false
+    // Меньше половины секунды — это случайное касание, а не фраза.
+    if (blob.size < 1200) {
+      interim.value = ''
+      return
+    }
+    void sendRecording(blob)
+  }
+  recognizing.value = true
   interim.value = ''
-  if (text) void applyVoice(text)
+  hapticImpact('medium')
+  media.start()
+  stopTimer = window.setTimeout(() => {
+    if (recognizing.value) toggleRecording()
+  }, MAX_RECORDING_MS)
 }
 
 /** Нажатие: первое — начать запись, второе — закончить и разобрать. */
 function toggleRecording(): void {
+  if (parsing.value) return
   if (recognizing.value) {
     hapticImpact('light')
-    wantRecording = false
     clearStopTimer()
-    // stop() приведёт к onend, там и завершим.
     try {
-      recognition?.stop()
+      media?.stop()
     } catch {
-      finishRecording()
+      releaseStream()
+      recognizing.value = false
     }
     return
   }
+  void startRecording()
+}
 
-  const rec = ensureRecognition()
-  if (!rec || parsing.value) return
-  committed = ''
-  segment = ''
-  interim.value = ''
-  wantRecording = true
-  recognizing.value = true
-  hapticImpact('medium')
-  stopTimer = window.setTimeout(() => {
-    if (recognizing.value) toggleRecording()
-  }, MAX_RECORDING_MS)
+/** Отправляет запись нейросети и заполняет поля. */
+async function sendRecording(blob: Blob): Promise<void> {
+  parsing.value = true
   try {
-    rec.start()
-  } catch {
-    wantRecording = false
-    recognizing.value = false
-    clearStopTimer()
+    const r = await itemsApi.voiceUpload(blob)
+    applyFields(r)
+    hapticNotify(r.low_confidence ? 'warning' : 'success')
+    toast.success(
+      r.low_confidence ? 'Заполнил что расслышал — проверь поля' : 'Поля заполнены',
+    )
+  } catch (e) {
+    hapticNotify('error')
+    toast.error(e instanceof Error ? e.message : 'Не удалось разобрать запись')
+  } finally {
+    parsing.value = false
   }
 }
 
@@ -316,9 +318,13 @@ async function applyVoice(text: string): Promise<void> {
 
 onBeforeUnmount(() => {
   cancelDictation()
-  wantRecording = false
   clearStopTimer()
-  recognition?.abort()
+  try {
+    media?.stop()
+  } catch {
+    /* уже остановлен */
+  }
+  releaseStream()
   for (const p of photos.value) URL.revokeObjectURL(p.preview)
 })
 
@@ -414,25 +420,25 @@ async function submit(): Promise<void> {
           <div class="voice-text">
             <div class="voice-title">Заполнить голосом</div>
             <div class="voice-hint hint">
-              <span v-if="recognizing">Слушаю… нажми ещё раз, когда закончишь</span>
+              <span v-if="recognizing">Записываю… нажми ещё раз, когда закончишь</span>
               <span v-else-if="parsing">Разбираю…</span>
-              <span v-else-if="speechSupported">Нажми и наговори вещь — можно с паузами</span>
-              <span v-else>Голос недоступен — впиши фразу ниже</span>
+              <span v-else-if="speechSupported">Нажми и наговори вещь одной фразой</span>
+              <span v-else>Запись недоступна — надиктуй боту или впиши фразу</span>
             </div>
             <div v-if="interim" class="voice-interim">{{ interim }}</div>
           </div>
         </div>
 
-        <!-- Диктовка боту: работает в любом клиенте, распознаёт нейросеть -->
+        <!-- Запасной путь: показываем, только если записать в приложении нельзя -->
         <button
-          v-if="!dictating"
+          v-if="!dictating && !speechSupported"
           class="dictate tap"
           :disabled="parsing"
           @click="startDictation"
         >
           🎤 Надиктовать боту
         </button>
-        <div v-else class="dictate-wait">
+        <div v-else-if="dictating" class="dictate-wait">
           <span class="spinner" aria-hidden="true" />
           <span class="hint">Жду голосовое в чате с ботом…</span>
           <button class="link tap" @click="cancelDictation">Отменить</button>

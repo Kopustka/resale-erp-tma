@@ -103,6 +103,14 @@ export const itemsApi = {
   parseVoice: (text: string) =>
     http.post<VoiceParseResult>(`${V1}/items/parse-voice`, { text }),
 
+  /** Запись из мини-аппа -> распознавание и разбор нейросетью. */
+  voiceUpload: (blob: Blob, signal?: AbortSignal) =>
+    uploadFile<VoiceParseResult>(
+      `${V1}/items/voice-upload`,
+      new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' }),
+      signal,
+    ),
+
   /** Начать диктовку боту: ссылка в чат, куда записать голосовое. */
   startVoiceCapture: () => http.post<VoiceCapture>(`${V1}/items/voice-capture`),
 

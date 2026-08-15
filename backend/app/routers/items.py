@@ -5,7 +5,7 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,7 @@ from ..schemas import (
 )
 from ..services import (
     ai_voice,
+    audio,
     fx,
     idempotency,
     post_queue,
@@ -214,6 +215,47 @@ async def parse_voice(
         title=p.title,
         low_confidence=True,  # словарь разбирает грубее — просим проверить
     )
+
+
+MAX_VOICE_MB = 10
+
+
+@router.post("/voice-upload", response_model=VoiceParseResult)
+async def voice_upload(
+    file: UploadFile = File(...),
+    member: StoreMember = Depends(get_active_membership),
+):
+    """Запись из мини-аппа: распознаём и раскладываем по полям.
+
+    Браузер отдаёт webm или mp4 в зависимости от платформы, поэтому всё
+    приводим к ogg — модель документированно понимает именно его.
+    """
+    if member.role not in CAN_EDIT:
+        raise HTTPException(403, "Role cannot create items")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(422, "Пустая запись")
+    if len(data) > MAX_VOICE_MB * 1024 * 1024:
+        raise HTTPException(413, f"Запись больше {MAX_VOICE_MB} МБ")
+
+    try:
+        ogg = await audio.to_ogg(data)
+    except audio.AudioError as e:
+        logging.getLogger("ai_voice").info("перекодирование не удалось: %s", e)
+        raise HTTPException(422, "Не удалось прочитать запись — попробуйте ещё раз")
+
+    try:
+        result = await ai_voice.parse_voice_audio(ogg, "audio/ogg")
+    except ai_voice.VoiceAiUnavailable as e:
+        logging.getLogger("ai_voice").info("разбор записи не удался: %s", e)
+        raise HTTPException(503, "Распознавание временно недоступно, попробуйте ещё раз")
+
+    transcript = result.pop("transcript", "")
+    # Ничего не распознали — честно говорим об этом, а не отдаём пустую форму.
+    if not transcript:
+        raise HTTPException(422, "Речь не распознана — запишите ещё раз, ближе к микрофону")
+    return VoiceParseResult(**result)
 
 
 @router.post("/voice-capture", response_model=VoiceCaptureOut)

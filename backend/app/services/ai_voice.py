@@ -92,58 +92,41 @@ def _clean(parsed: dict) -> dict:
     }
 
 
-AUDIO_PROMPT = PROMPT.replace(
-    "Пользователь надиктовал одну фразу про вещь. Извлеки из неё то, что реально сказано.",
-    "Тебе дана аудиозапись: продавец надиктовал одну фразу про вещь. Распознай речь "
-    "(русский язык) и извлеки из неё то, что реально сказано.",
-).replace(
-    '{"brand": null,',
-    '{"transcript": "<что услышал, дословно>", "brand": null,',
-)
+# Расшифровка идёт ОТДЕЛЬНЫМ вызовом, и это принципиально. Промт «извлеки
+# поля товара» подталкивает модель сочинять товар: на чистом синусоидальном
+# тоне она уверенно «услышала» Supreme за 100 и Burberry за 1500. Промт,
+# который просит только расшифровку, на том же звуке честно отвечает
+# «речи нет». Поэтому сначала слушаем, потом разбираем текст.
+TRANSCRIBE_PROMPT = """Расшифруй эту аудиозапись дословно. Это может быть речь на русском языке, а может быть что угодно другое.
+
+Правила:
+1. Если слышна человеческая речь — верни её дословно, без правок и додумываний.
+2. Если речи НЕТ (тишина, шум, музыка, гудок, звон, шорох) — верни пустую строку.
+3. Не описывай звук словами. Не придумывай текст. Только расшифровка или пустая строка.
+
+Ответь строго JSON: {"speech": true|false, "text": "<дословно или пусто>"}"""
 
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 
-async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
-    """Распознаёт голосовое и раскладывает по полям за один вызов.
-
-    Отдельного распознавания речи не нужно: модель работает со звуком
-    напрямую, поэтому браузерный Web Speech API вообще не участвует —
-    в WebView Telegram на него нельзя полагаться.
-    """
-    if not settings.gemini_api_key:
-        raise VoiceAiUnavailable("нет ключа")
-    if not data:
-        raise VoiceAiUnavailable("пустая запись")
-    if len(data) > MAX_AUDIO_BYTES:
-        raise VoiceAiUnavailable("запись слишком длинная")
-
+async def _ask(parts: list[dict], timeout: int, temperature: float) -> dict:
+    """Запрос к модели со строгим JSON и повторами на перегрузке."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{settings.gemini_model}:generateContent"
     )
     body = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": AUDIO_PROMPT},
-                    {
-                        "inline_data": {
-                            "mime_type": mime,
-                            "data": base64.b64encode(data).decode(),
-                        }
-                    },
-                ]
-            }
-        ],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": temperature,
+        },
     }
-
     r = None
     attempts = 3
     for attempt in range(attempts):
         try:
-            async with httpx.AsyncClient(timeout=90) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.post(
                     url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
                 )
@@ -166,9 +149,43 @@ async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
         raise VoiceAiUnavailable(f"разбор ответа: {e}")
     if not isinstance(parsed, dict):
         raise VoiceAiUnavailable("ответ не объект")
-    out = _clean(parsed)
-    out["transcript"] = _text(parsed.get("transcript"), 600) or ""
-    return out
+    return parsed
+
+
+async def transcribe(data: bytes, mime: str = "audio/ogg") -> str:
+    """Только расшифровка. Пустая строка — речи в записи нет."""
+    if not settings.gemini_api_key:
+        raise VoiceAiUnavailable("нет ключа")
+    if not data:
+        raise VoiceAiUnavailable("пустая запись")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise VoiceAiUnavailable("запись слишком длинная")
+
+    parsed = await _ask(
+        [
+            {"text": TRANSCRIBE_PROMPT},
+            {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}},
+        ],
+        timeout=90,
+        temperature=0.0,
+    )
+    if not parsed.get("speech"):
+        return ""
+    return _text(parsed.get("text"), MAX_TEXT) or ""
+
+
+async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
+    """Запись -> поля вещи. Два шага: сначала услышать, потом разобрать."""
+    transcript = await transcribe(data, mime)
+    if len(transcript.strip()) < 3:
+        return {
+            "brand": None, "category": None, "size": None, "color": None,
+            "condition": None, "cost_price": None, "list_price": None,
+            "title": None, "low_confidence": True, "transcript": "",
+        }
+    fields = await parse_voice_ai(transcript)
+    fields["transcript"] = transcript
+    return fields
 
 
 async def parse_voice_ai(text: str) -> dict:
