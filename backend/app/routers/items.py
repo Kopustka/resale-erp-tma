@@ -200,7 +200,7 @@ async def parse_voice(
         data = await ai_voice.parse_voice_ai(payload.text)
         return VoiceParseResult(**data)
     except ai_voice.VoiceAiUnavailable as e:
-        logging.getLogger("ai_voice").info("откат на словарный разбор: %s", e)
+        logging.getLogger("ai_voice").warning("откат на словарный разбор: %s", e)
 
     # Запасной путь: без ключа, при исчерпанной квоте или сбое сети функция
     # обязана продолжать работать, пусть и хуже.
@@ -242,14 +242,21 @@ async def voice_upload(
     try:
         ogg = await audio.to_ogg(data)
     except audio.AudioError as e:
-        logging.getLogger("ai_voice").info("перекодирование не удалось: %s", e)
+        logging.getLogger("ai_voice").warning("перекодирование не удалось: %s", e)
         raise HTTPException(422, "Не удалось прочитать запись — попробуйте ещё раз")
 
     try:
         result = await ai_voice.parse_voice_audio(ogg, "audio/ogg")
     except ai_voice.VoiceAiUnavailable as e:
-        logging.getLogger("ai_voice").info("разбор записи не удался: %s", e)
-        raise HTTPException(503, "Распознавание временно недоступно, попробуйте ещё раз")
+        # Уровень warning, а не info: без него причина 503 не видна в журнале,
+        # и разбираться приходится вслепую.
+        logging.getLogger("ai_voice").warning("разбор записи не удался: %s", e)
+        detail = (
+            "Исчерпан дневной лимит распознавания — обновите ключ Gemini"
+            if "квота" in str(e).lower()
+            else "Распознавание временно недоступно, попробуйте ещё раз"
+        )
+        raise HTTPException(503, detail)
 
     transcript = result.pop("transcript", "")
     # Ничего не распознали — честно говорим об этом, а не отдаём пустую форму.

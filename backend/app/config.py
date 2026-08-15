@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     # AI-генерация названия/описания по фото (Gemini, бесплатный ключ AI Studio)
     gemini_api_key: str = Field("", alias="GEMINI_API_KEY")
+    # Запасная модель: у неё отдельная квота, включается при 429 у основной.
+    gemini_fallback_model: str = "gemini-flash-lite-latest"
     gemini_model: str = Field("gemini-2.5-flash", alias="GEMINI_MODEL")
 
     @property

@@ -21,6 +21,7 @@ import logging
 import httpx
 
 from ..config import get_settings
+from . import gemini
 
 settings = get_settings()
 log = logging.getLogger("ai_voice")
@@ -109,49 +110,6 @@ TRANSCRIBE_PROMPT = """Расшифруй эту аудиозапись досл
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 
-async def _ask(parts: list[dict], timeout: int, temperature: float) -> dict:
-    """Запрос к модели со строгим JSON и повторами на перегрузке."""
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
-    )
-    body = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": temperature,
-        },
-    }
-    r = None
-    attempts = 3
-    for attempt in range(attempts):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(
-                    url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
-                )
-        except Exception as e:  # noqa: BLE001
-            if attempt < attempts - 1:
-                await asyncio.sleep(0.8 * (attempt + 1))
-                continue
-            raise VoiceAiUnavailable(f"сеть: {e}")
-        if r.status_code in (500, 502, 503) and attempt < attempts - 1:
-            await asyncio.sleep(0.8 * (attempt + 1))
-            continue
-        break
-
-    if r is None or r.status_code != 200:
-        raise VoiceAiUnavailable(f"HTTP {r.status_code if r else '—'}")
-    try:
-        raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(raw)
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
-        raise VoiceAiUnavailable(f"разбор ответа: {e}")
-    if not isinstance(parsed, dict):
-        raise VoiceAiUnavailable("ответ не объект")
-    return parsed
-
-
 async def transcribe(data: bytes, mime: str = "audio/ogg") -> str:
     """Только расшифровка. Пустая строка — речи в записи нет."""
     if not settings.gemini_api_key:
@@ -161,14 +119,17 @@ async def transcribe(data: bytes, mime: str = "audio/ogg") -> str:
     if len(data) > MAX_AUDIO_BYTES:
         raise VoiceAiUnavailable("запись слишком длинная")
 
-    parsed = await _ask(
-        [
-            {"text": TRANSCRIBE_PROMPT},
-            {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}},
-        ],
-        timeout=90,
-        temperature=0.0,
-    )
+    try:
+        parsed = await gemini.call_json(
+            [
+                {"text": TRANSCRIBE_PROMPT},
+                {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}},
+            ],
+            timeout=90,
+            temperature=0.0,
+        )
+    except gemini.GeminiUnavailable as e:
+        raise VoiceAiUnavailable(str(e))
     if not parsed.get("speech"):
         return ""
     return _text(parsed.get("text"), MAX_TEXT) or ""
@@ -190,52 +151,15 @@ async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
 
 async def parse_voice_ai(text: str) -> dict:
     """Разбирает фразу моделью. Бросает VoiceAiUnavailable — тогда откат."""
-    if not settings.gemini_api_key:
-        raise VoiceAiUnavailable("нет ключа")
     phrase = (text or "").strip()
     if not phrase:
         raise VoiceAiUnavailable("пустая фраза")
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
-    )
-    body = {
-        "contents": [{"parts": [{"text": PROMPT + "\n\nФРАЗА:\n" + phrase[:MAX_TEXT]}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            # Извлечение фактов, а не сочинение: низкая температура.
-            "temperature": 0.1,
-        },
-    }
-    # 503 у Gemini — частая кратковременная перегрузка. Разбор голоса
-    # пользователь ждёт, поэтому лишние полсекунды дешевле, чем молчаливый
-    # откат на словарь, который читает «сорок третий» как размер 40.
-    r = None
-    attempts = 3
-    for attempt in range(attempts):
-        try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.post(
-                    url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
-                )
-        except Exception as e:  # noqa: BLE001
-            if attempt < attempts - 1:
-                await asyncio.sleep(0.6 * (attempt + 1))
-                continue
-            raise VoiceAiUnavailable(f"сеть: {e}")
-        if r.status_code in (500, 502, 503) and attempt < attempts - 1:
-            await asyncio.sleep(0.6 * (attempt + 1))
-            continue
-        break
-
-    if r is None or r.status_code != 200:
-        raise VoiceAiUnavailable(f"HTTP {r.status_code if r else '—'}")
     try:
-        raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(raw)
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
-        raise VoiceAiUnavailable(f"разбор ответа: {e}")
-    if not isinstance(parsed, dict):
-        raise VoiceAiUnavailable("ответ не объект")
+        parsed = await gemini.call_json(
+            [{"text": PROMPT + "\n\nФРАЗА:\n" + phrase[:MAX_TEXT]}],
+            timeout=25,
+            temperature=0.1,
+        )
+    except gemini.GeminiUnavailable as e:
+        raise VoiceAiUnavailable(str(e))
     return _clean(parsed)
