@@ -99,7 +99,16 @@ const manualPhrase = ref('')
 const showCheat = ref(false)
 
 let recognition: SpeechRecognitionLike | null = null
-let finalText = ''
+/** Намерение пользователя: запись включена до повторного нажатия. */
+let wantRecording = false
+/** Речь из уже завершённых отрезков — движок обрывается на паузах. */
+let committed = ''
+/** Текущий отрезок, ещё не завершённый. */
+let segment = ''
+let stopTimer: number | null = null
+
+/** Предохранитель: если про запись забыли, глушим её сами. */
+const MAX_RECORDING_MS = 120_000
 
 function ensureRecognition(): SpeechRecognitionLike | null {
   if (!RecognitionCtor) return null
@@ -109,45 +118,98 @@ function ensureRecognition(): SpeechRecognitionLike | null {
   rec.continuous = true
   rec.interimResults = true
   rec.maxAlternatives = 1
+
   rec.onresult = (event) => {
     let text = ''
     for (let i = event.resultIndex; i < event.results.length; i++) {
       text += event.results[i][0].transcript
     }
-    interim.value = text
-    finalText = text
+    segment = text
+    interim.value = (committed + ' ' + segment).trim()
   }
-  rec.onerror = () => {
-    recognizing.value = false
+
+  rec.onerror = (event) => {
+    const code = (event as unknown as { error?: string }).error
+    // Отказ в микрофоне — продолжать бессмысленно, глушим совсем.
+    if (code === 'not-allowed' || code === 'service-not-allowed') {
+      wantRecording = false
+      toast.error('Нет доступа к микрофону — разрешите его в настройках')
+    }
+    // Остальное (тишина, обрыв) лечится перезапуском в onend.
   }
+
   rec.onend = () => {
-    recognizing.value = false
-    const text = finalText.trim()
-    interim.value = ''
-    if (text) void applyVoice(text)
+    // Движок сам обрывается на паузе. Пока пользователь не нажал «стоп»,
+    // это не конец фразы — дописываем отрезок и слушаем дальше.
+    committed = (committed + ' ' + segment).trim()
+    segment = ''
+    if (wantRecording) {
+      try {
+        rec.start()
+        return
+      } catch {
+        /* перезапуск не удался — завершаем как обычно */
+      }
+    }
+    finishRecording()
   }
+
   recognition = rec
   return rec
 }
 
-function startRecording(): void {
-  const rec = ensureRecognition()
-  if (!rec || recognizing.value) return
-  finalText = ''
-  interim.value = ''
-  recognizing.value = true
-  hapticImpact('medium')
-  try {
-    rec.start()
-  } catch {
-    recognizing.value = false
+function clearStopTimer(): void {
+  if (stopTimer !== null) {
+    window.clearTimeout(stopTimer)
+    stopTimer = null
   }
 }
 
-function stopRecording(): void {
-  if (!recognition || !recognizing.value) return
-  hapticImpact('light')
-  recognition.stop()
+/** Свести накопленное и отправить на разбор. */
+function finishRecording(): void {
+  clearStopTimer()
+  wantRecording = false
+  recognizing.value = false
+  const text = (committed + ' ' + segment).trim()
+  committed = ''
+  segment = ''
+  interim.value = ''
+  if (text) void applyVoice(text)
+}
+
+/** Нажатие: первое — начать запись, второе — закончить и разобрать. */
+function toggleRecording(): void {
+  if (recognizing.value) {
+    hapticImpact('light')
+    wantRecording = false
+    clearStopTimer()
+    // stop() приведёт к onend, там и завершим.
+    try {
+      recognition?.stop()
+    } catch {
+      finishRecording()
+    }
+    return
+  }
+
+  const rec = ensureRecognition()
+  if (!rec || parsing.value) return
+  committed = ''
+  segment = ''
+  interim.value = ''
+  wantRecording = true
+  recognizing.value = true
+  hapticImpact('medium')
+  stopTimer = window.setTimeout(() => {
+    if (recognizing.value) toggleRecording()
+  }, MAX_RECORDING_MS)
+  try {
+    rec.start()
+  } catch {
+    wantRecording = false
+    recognizing.value = false
+    clearStopTimer()
+  }
 }
 
 /** Разбирает фразу на сервере и предзаполняет поля формы. */
@@ -180,6 +242,8 @@ async function applyVoice(text: string): Promise<void> {
 }
 
 onBeforeUnmount(() => {
+  wantRecording = false
+  clearStopTimer()
   recognition?.abort()
   for (const p of photos.value) URL.revokeObjectURL(p.preview)
 })
@@ -263,22 +327,22 @@ async function submit(): Promise<void> {
             v-if="speechSupported"
             class="mic"
             :class="{ live: recognizing }"
-            aria-label="Заполнить голосом"
-            @pointerdown.prevent="startRecording"
-            @pointerup.prevent="stopRecording"
-            @pointercancel.prevent="stopRecording"
-            @pointerleave="stopRecording"
+            :aria-label="recognizing ? 'Остановить запись' : 'Заполнить голосом'"
+            @click="toggleRecording"
           >
-            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+            <svg v-if="recognizing" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+              <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
               <path fill="currentColor" d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zm-7 8a7 7 0 0 0 6 6.9V21H8v2h8v-2h-3v-3.1A7 7 0 0 0 19 11h-2a5 5 0 0 1-10 0H5z" />
             </svg>
           </button>
           <div class="voice-text">
             <div class="voice-title">Заполнить голосом</div>
             <div class="voice-hint hint">
-              <span v-if="recognizing">Слушаю… отпусти, чтобы заполнить</span>
+              <span v-if="recognizing">Слушаю… нажми ещё раз, когда закончишь</span>
               <span v-else-if="parsing">Разбираю…</span>
-              <span v-else-if="speechSupported">Удерживай и наговори вещь одной фразой</span>
+              <span v-else-if="speechSupported">Нажми и наговори вещь — можно с паузами</span>
               <span v-else>Голос недоступен — впиши фразу ниже</span>
             </div>
             <div v-if="interim" class="voice-interim">{{ interim }}</div>
@@ -641,7 +705,9 @@ async function submit(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  touch-action: none;
+  /* Было none под жест удержания: с обычным нажатием это только мешало
+     начать прокрутку пальцем с кнопки. */
+  touch-action: manipulation;
   transition: transform 0.1s ease;
 }
 .mic:active {
