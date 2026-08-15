@@ -150,6 +150,19 @@ class VoiceParseResult(BaseModel):
 
 
 # --------------------------- Аналитика --------------------------- #
+class VoiceCaptureOut(BaseModel):
+    token: str
+    deep_link: str
+    expires_in: int
+
+
+class VoiceCaptureStatus(BaseModel):
+    status: str  # waiting | armed | done | expired | error
+    fields: VoiceParseResult | None = None
+    transcript: str | None = None
+    error: str | None = None
+
+
 class StaleBucket(BaseModel):
     threshold_days: int
     count: int

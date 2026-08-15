@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 
@@ -89,6 +90,85 @@ def _clean(parsed: dict) -> dict:
         "title": _text(parsed.get("title"), 100),
         "low_confidence": bool(parsed.get("low_confidence")),
     }
+
+
+AUDIO_PROMPT = PROMPT.replace(
+    "Пользователь надиктовал одну фразу про вещь. Извлеки из неё то, что реально сказано.",
+    "Тебе дана аудиозапись: продавец надиктовал одну фразу про вещь. Распознай речь "
+    "(русский язык) и извлеки из неё то, что реально сказано.",
+).replace(
+    '{"brand": null,',
+    '{"transcript": "<что услышал, дословно>", "brand": null,',
+)
+
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+async def parse_voice_audio(data: bytes, mime: str = "audio/ogg") -> dict:
+    """Распознаёт голосовое и раскладывает по полям за один вызов.
+
+    Отдельного распознавания речи не нужно: модель работает со звуком
+    напрямую, поэтому браузерный Web Speech API вообще не участвует —
+    в WebView Telegram на него нельзя полагаться.
+    """
+    if not settings.gemini_api_key:
+        raise VoiceAiUnavailable("нет ключа")
+    if not data:
+        raise VoiceAiUnavailable("пустая запись")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise VoiceAiUnavailable("запись слишком длинная")
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.gemini_model}:generateContent"
+    )
+    body = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": AUDIO_PROMPT},
+                    {
+                        "inline_data": {
+                            "mime_type": mime,
+                            "data": base64.b64encode(data).decode(),
+                        }
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
+    }
+
+    r = None
+    attempts = 3
+    for attempt in range(attempts):
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                r = await client.post(
+                    url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
+                )
+        except Exception as e:  # noqa: BLE001
+            if attempt < attempts - 1:
+                await asyncio.sleep(0.8 * (attempt + 1))
+                continue
+            raise VoiceAiUnavailable(f"сеть: {e}")
+        if r.status_code in (500, 502, 503) and attempt < attempts - 1:
+            await asyncio.sleep(0.8 * (attempt + 1))
+            continue
+        break
+
+    if r is None or r.status_code != 200:
+        raise VoiceAiUnavailable(f"HTTP {r.status_code if r else '—'}")
+    try:
+        raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(raw)
+    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
+        raise VoiceAiUnavailable(f"разбор ответа: {e}")
+    if not isinstance(parsed, dict):
+        raise VoiceAiUnavailable("ответ не объект")
+    out = _clean(parsed)
+    out["transcript"] = _text(parsed.get("transcript"), 600) or ""
+    return out
 
 
 async def parse_voice_ai(text: str) -> dict:

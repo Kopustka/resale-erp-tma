@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
+from io import BytesIO
 from contextlib import suppress
 
 from aiogram import Bot, Dispatcher, F
@@ -42,11 +44,13 @@ from .models import (
 )
 from .services import (
     ai_template,
+    ai_voice,
     comment_reply,
     post_template,
     preview,
     subscriptions,
     template_capture,
+    voice_capture,
 )
 from .services.ai_describe import AiGenerationError, AiNotConfigured
 from .services.fsm import SOLD_STATUSES
@@ -190,6 +194,75 @@ async def on_template_sample(message: Message):
         parse_mode="HTML",
     )
     await message.answer(demo, parse_mode="HTML", reply_markup=_webapp_kb())
+
+
+@dp.message(CommandStart(deep_link=True, magic=F.args.startswith("voice_")))
+async def cmd_start_voice(message: Message, command: CommandObject):
+    """Deep link из мини-аппа: ждём голосовое с описанием вещи."""
+    token = (command.args or "")[len("voice_"):]
+    session = await voice_capture.arm(token)
+    if session is None or session["telegram_id"] != message.from_user.id:
+        await message.answer(
+            "Ссылка устарела. Вернитесь в приложение и нажмите «Надиктовать» ещё раз.",
+            reply_markup=_webapp_kb(),
+        )
+        return
+    await message.answer(
+        "🎤 <b>Опишите вещь голосом</b>\n\n"
+        "Запишите голосовое сообщение обычной кнопкой микрофона — одной фразой, "
+        "как рассказали бы покупателю.\n\n"
+        "Например: «взял найковскую олимпийку сорок шестого, отдал полтос, "
+        "состояние отличное, продаю за сто пятьдесят».",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.chat.type == "private", F.voice | F.audio)
+async def on_voice_note(message: Message):
+    """Голосовое с описанием вещи — распознаём и раскладываем по полям."""
+    active = await voice_capture.get_active_for_user(message.from_user.id)
+    if active is None:
+        raise SkipHandler
+    token, session = active
+    if session["status"] != voice_capture.ARMED:
+        raise SkipHandler
+
+    src = message.voice or message.audio
+    note = await message.answer("⏳ Слушаю запись…")
+    try:
+        buf = BytesIO()
+        await bot.download(src, destination=buf)
+        data = buf.getvalue()
+        mime = getattr(src, "mime_type", None) or "audio/ogg"
+        result = await ai_voice.parse_voice_audio(data, mime)
+    except ai_voice.VoiceAiUnavailable as e:
+        await voice_capture.fail(token, str(e))
+        await note.edit_text(f"❌ Не удалось разобрать запись: {e}")
+        return
+    except Exception as e:  # noqa: BLE001
+        await voice_capture.fail(token, "внутренняя ошибка")
+        logging.getLogger("voice").warning("voice note failed: %s", e)
+        await note.edit_text("❌ Не удалось обработать запись. Попробуйте ещё раз.")
+        return
+
+    transcript = result.pop("transcript", "")
+    await voice_capture.finish(token, result, transcript)
+
+    filled = [
+        f"{label}: <b>{post_template.esc(str(result[key]))}</b>"
+        for key, label in (
+            ("brand", "Бренд"), ("category", "Категория"), ("size", "Размер"),
+            ("color", "Цвет"), ("condition", "Состояние"),
+            ("cost_price", "Закупка"), ("list_price", "Цена продажи"),
+        )
+        if result.get(key) is not None
+    ]
+    body = "✅ <b>Услышал</b>\n\n"
+    if transcript:
+        body += f"<i>{post_template.esc(transcript)}</i>\n\n"
+    body += "\n".join(filled) if filled else "Ничего разобрать не вышло."
+    body += "\n\nВернитесь в приложение — поля уже заполнены."
+    await note.edit_text(body, parse_mode="HTML", reply_markup=_webapp_kb())
 
 
 @dp.message(CommandStart(deep_link=True, magic=F.args.startswith("item_")))

@@ -26,6 +26,8 @@ import type {
   StoreOut,
   SwitchStoreResult,
   TemplatePlaceholder,
+  VoiceCapture,
+  VoiceCaptureStatus,
   VoiceParseResult,
 } from './types'
 
@@ -100,6 +102,15 @@ export const itemsApi = {
   /** Разбор голосовой фразы в поля новой вещи. */
   parseVoice: (text: string) =>
     http.post<VoiceParseResult>(`${V1}/items/parse-voice`, { text }),
+
+  /** Начать диктовку боту: ссылка в чат, куда записать голосовое. */
+  startVoiceCapture: () => http.post<VoiceCapture>(`${V1}/items/voice-capture`),
+
+  voiceCaptureStatus: (token: string) =>
+    http.get<VoiceCaptureStatus>(`${V1}/items/voice-capture/${token}`),
+
+  cancelVoiceCapture: (token: string) =>
+    http.del<void>(`${V1}/items/voice-capture/${token}`),
 
   /** AI-перегенерация названия/описания по фото вещи (без сохранения). */
   aiDescribe: (id: string) => http.post<AiDescribeResult>(`${V1}/items/${id}/ai-describe`),

@@ -5,10 +5,11 @@ import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
 import { closeOverlay, setTab } from '@/app/navigation'
-import { hapticImpact, hapticNotify } from '@/shared/telegram/webapp'
+import { hapticImpact, hapticNotify, openTelegramLink } from '@/shared/telegram/webapp'
 import type { ItemCreate } from '@/shared/api/types'
 import { itemsApi, mediaApi } from '@/shared/api/endpoints'
 import { CURRENCIES, type Currency } from '@/shared/api/types'
+import type { VoiceParseResult } from '@/shared/api/types'
 
 const items = useItemsStore()
 const session = useSessionStore()
@@ -212,6 +213,86 @@ function toggleRecording(): void {
   }
 }
 
+// ---------------- Диктовка боту (надёжный путь без браузера) ---------------- //
+const dictating = ref(false)
+let dictateToken: string | null = null
+let dictateTimer: number | null = null
+let dictateDeadline = 0
+
+function stopDictatePolling(): void {
+  if (dictateTimer !== null) {
+    window.clearInterval(dictateTimer)
+    dictateTimer = null
+  }
+}
+
+function cancelDictation(): void {
+  stopDictatePolling()
+  dictating.value = false
+  const t = dictateToken
+  dictateToken = null
+  if (t) void itemsApi.cancelVoiceCapture(t).catch(() => undefined)
+}
+
+/**
+ * Открывает чат с ботом, где можно записать голосовое штатной кнопкой.
+ * Распознаёт и раскладывает по полям та же модель — браузерный Web Speech
+ * API здесь не участвует, поэтому путь работает в любом клиенте.
+ */
+async function startDictation(): Promise<void> {
+  if (dictating.value) return
+  hapticImpact('medium')
+  try {
+    const s = await itemsApi.startVoiceCapture()
+    dictateToken = s.token
+    dictating.value = true
+    dictateDeadline = Date.now() + Math.min(s.expires_in * 1000, 300_000)
+    openTelegramLink(s.deep_link)
+    dictateTimer = window.setInterval(() => void pollDictation(), 2000)
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось начать диктовку')
+  }
+}
+
+async function pollDictation(): Promise<void> {
+  const token = dictateToken
+  if (!token) return stopDictatePolling()
+  if (Date.now() > dictateDeadline) {
+    cancelDictation()
+    toast.error('Время ожидания истекло')
+    return
+  }
+  try {
+    const st = await itemsApi.voiceCaptureStatus(token)
+    if (st.status === 'waiting' || st.status === 'armed') return
+    stopDictatePolling()
+    dictateToken = null
+    dictating.value = false
+    if (st.status === 'done' && st.fields) {
+      applyFields(st.fields)
+      hapticNotify('success')
+      toast.success(st.transcript ? `Услышал: «${st.transcript}»` : 'Поля заполнены')
+    } else {
+      hapticNotify('error')
+      toast.error(st.error || 'Не удалось разобрать запись')
+    }
+  } catch {
+    /* сеть моргнула — попробуем на следующем тике */
+  }
+}
+
+/** Раскладывает разобранные поля по форме. Общее для обоих путей. */
+function applyFields(r: VoiceParseResult): void {
+  if (r.brand) form.brand = r.brand
+  if (r.category) form.category = r.category
+  if (r.size) form.size = r.size
+  if (r.color) form.color = r.color
+  if (r.condition) form.condition = r.condition
+  if (r.title && !form.title.trim()) form.title = r.title
+  if (session.canSeeFinance && r.cost_price != null) form.cost_price = String(r.cost_price)
+  if (r.list_price != null) form.list_price = String(r.list_price)
+}
+
 /** Разбирает фразу на сервере и предзаполняет поля формы. */
 async function applyVoice(text: string): Promise<void> {
   const phrase = text.trim()
@@ -219,15 +300,7 @@ async function applyVoice(text: string): Promise<void> {
   parsing.value = true
   try {
     const r = await itemsApi.parseVoice(phrase)
-    if (r.brand) form.brand = r.brand
-    if (r.category) form.category = r.category
-    if (r.size) form.size = r.size
-    if (r.color) form.color = r.color
-    if (r.condition) form.condition = r.condition
-    if (r.title && !form.title.trim()) form.title = r.title
-    if (session.canSeeFinance && r.cost_price != null) form.cost_price = String(r.cost_price)
-    // Цена в объявлении нужна для публикации, поэтому подставляем её всем ролям.
-    if (r.list_price != null) form.list_price = String(r.list_price)
+    applyFields(r)
     manualPhrase.value = ''
     hapticNotify(r.low_confidence ? 'warning' : 'success')
     toast.success(
@@ -242,6 +315,7 @@ async function applyVoice(text: string): Promise<void> {
 }
 
 onBeforeUnmount(() => {
+  cancelDictation()
   wantRecording = false
   clearStopTimer()
   recognition?.abort()
@@ -347,6 +421,21 @@ async function submit(): Promise<void> {
             </div>
             <div v-if="interim" class="voice-interim">{{ interim }}</div>
           </div>
+        </div>
+
+        <!-- Диктовка боту: работает в любом клиенте, распознаёт нейросеть -->
+        <button
+          v-if="!dictating"
+          class="dictate tap"
+          :disabled="parsing"
+          @click="startDictation"
+        >
+          🎤 Надиктовать боту
+        </button>
+        <div v-else class="dictate-wait">
+          <span class="spinner" aria-hidden="true" />
+          <span class="hint">Жду голосовое в чате с ботом…</span>
+          <button class="link tap" @click="cancelDictation">Отменить</button>
         </div>
 
         <!-- Фолбэк вводом текста (нет распознавания речи) -->
@@ -788,5 +877,50 @@ async function submit(): Promise<void> {
 }
 .add-btn:disabled {
   opacity: 0.5;
+}
+.dictate {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--gap);
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
+  font-size: 15px;
+  font-weight: 700;
+}
+.dictate:disabled {
+  opacity: 0.6;
+}
+.dictate-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: var(--gap);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+}
+.dictate-wait .hint {
+  flex: 1;
+  font-size: 13px;
+}
+.dictate-wait .link {
+  color: var(--tg-theme-link-color);
+  font-weight: 700;
+  min-height: var(--tap);
+}
+.spinner {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--tg-theme-bg-color);
+  border-top-color: var(--tg-theme-link-color);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

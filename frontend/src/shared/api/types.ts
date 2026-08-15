@@ -131,6 +131,20 @@ export interface VoiceParseResult {
   low_confidence: boolean
 }
 
+/** Сессия «надиктовать боту»: ссылка в чат + токен для опроса. */
+export interface VoiceCapture {
+  token: string
+  deep_link: string
+  expires_in: number
+}
+
+export interface VoiceCaptureStatus {
+  status: 'waiting' | 'armed' | 'done' | 'expired' | 'error'
+  fields: VoiceParseResult | null
+  transcript: string | null
+  error: string | null
+}
+
 export interface StaleBucket {
   threshold_days: number
   count: number

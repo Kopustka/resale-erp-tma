@@ -34,6 +34,8 @@ from ..schemas import (
     ItemPage,
     ItemUpdate,
     StatusPatch,
+    VoiceCaptureOut,
+    VoiceCaptureStatus,
     VoiceParseRequest,
     VoiceParseResult,
 )
@@ -45,6 +47,7 @@ from ..services import (
     preview,
     subscriptions,
     telegram_post,
+    voice_capture,
 )
 from ..services.ai_describe import (
     AiGenerationError,
@@ -211,6 +214,56 @@ async def parse_voice(
         title=p.title,
         low_confidence=True,  # словарь разбирает грубее — просим проверить
     )
+
+
+@router.post("/voice-capture", response_model=VoiceCaptureOut)
+async def start_voice_capture(
+    user: User = Depends(get_current_user),
+    member: StoreMember = Depends(get_active_membership),
+):
+    """Готовит ссылку в чат с ботом, куда надиктовать голосовое."""
+    if member.role not in CAN_EDIT:
+        raise HTTPException(403, "Role cannot create items")
+    username = await telegram_post.get_bot_username()
+    if not username:
+        raise HTTPException(503, "Не удалось определить бота")
+    token = await voice_capture.create(user.telegram_id)
+    return VoiceCaptureOut(
+        token=token,
+        deep_link=f"https://t.me/{username}?start=voice_{token}",
+        expires_in=voice_capture.TTL,
+    )
+
+
+@router.get("/voice-capture/{token}", response_model=VoiceCaptureStatus)
+async def voice_capture_status(
+    token: str,
+    user: User = Depends(get_current_user),
+    _: StoreMember = Depends(get_active_membership),
+):
+    data = await voice_capture.get(token)
+    if data is None:
+        return VoiceCaptureStatus(status="expired")
+    if data["telegram_id"] != user.telegram_id:
+        raise HTTPException(404, "Session not found")
+    fields = data.get("fields")
+    return VoiceCaptureStatus(
+        status=data["status"],
+        fields=VoiceParseResult(**fields) if fields else None,
+        transcript=data.get("transcript"),
+        error=data.get("error"),
+    )
+
+
+@router.delete("/voice-capture/{token}", status_code=204)
+async def cancel_voice_capture(
+    token: str,
+    user: User = Depends(get_current_user),
+    _: StoreMember = Depends(get_active_membership),
+):
+    data = await voice_capture.get(token)
+    if data is not None and data["telegram_id"] == user.telegram_id:
+        await voice_capture.cancel(token)
 
 
 @router.get("/suggest/{field}")
