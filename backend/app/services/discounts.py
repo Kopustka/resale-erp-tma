@@ -21,23 +21,42 @@ log = logging.getLogger("discounts")
 # считали одинаково и процент в объявлении сходился с нажатой кнопкой.
 QUICK_PERCENTS = (10, 20, 30)
 
-# Округляем ВНИЗ до целых. Вниз, а не к ближайшему: при округлении вверх
-# покупатель получил бы скидку меньше обещанной, и «−30%» оказалось бы
-# неправдой. Единица округления — если понадобятся круглые ценники
-# (100, 150), поменять на Decimal("10").
-ROUND_TO = Decimal("1")
+# Шаг округления зависит от валюты. В рублях РФ ценник с единицами
+# выглядит неопрятно («1547»), поэтому округляем до десятков. В белорусских
+# суммы на порядок меньше, там достаточно убрать копейки.
+ROUND_STEPS: dict[str, Decimal] = {
+    "RUB": Decimal("10"),
+    "BYN": Decimal("1"),
+    "USD": Decimal("1"),
+    "EUR": Decimal("1"),
+}
+DEFAULT_STEP = Decimal("1")
 
 
-def apply_percent(price: Decimal, percent: int) -> Decimal:
-    """Цена со скидкой в N процентов, округлённая вниз."""
+def step_for(currency: str | None) -> Decimal:
+    return ROUND_STEPS.get((currency or "").upper(), DEFAULT_STEP)
+
+
+def round_price(value: Decimal, currency: str | None = None) -> Decimal:
+    """Округление ВНИЗ до шага валюты.
+
+    Вниз, а не к ближайшему: при округлении вверх покупатель получил бы
+    скидку меньше обещанной, и «−30%» оказалось бы неправдой.
+    """
+    step = step_for(currency)
+    raw = Decimal(value)
+    stepped = (raw / step).to_integral_value(rounding=ROUND_FLOOR) * step
+    # Дешёвая вещь при крупном шаге дала бы ноль и упёрлась в проверку
+    # «цена больше нуля». Для такого вырожденного случая режем до целых.
+    if stepped <= 0 < raw:
+        return raw.to_integral_value(rounding=ROUND_FLOOR)
+    return stepped
+
+
+def apply_percent(price: Decimal, percent: int, currency: str | None = None) -> Decimal:
+    """Цена со скидкой в N процентов, округлённая вниз по шагу валюты."""
     raw = Decimal(price) * (Decimal(100 - percent) / Decimal(100))
-    return round_price(raw)
-
-
-def round_price(value: Decimal) -> Decimal:
-    """Округление вниз до заданного шага."""
-    stepped = (Decimal(value) / ROUND_TO).to_integral_value(rounding=ROUND_FLOOR)
-    return stepped * ROUND_TO
+    return round_price(raw, currency)
 
 
 def percent_of(old: Decimal, new: Decimal) -> int:

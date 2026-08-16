@@ -11,7 +11,13 @@ import { ApiError } from '@/shared/api/http'
 import { useItemsStore } from '@/stores/items'
 import { useToastStore } from '@/stores/toast'
 import { hapticImpact, hapticSelection } from '@/shared/telegram/webapp'
-import { applyPercent, percentOf, QUICK_PERCENTS, roundPrice } from '@/shared/utils/discount'
+import {
+  applyPercent,
+  percentOf,
+  QUICK_PERCENTS,
+  roundPrice,
+  stepFor,
+} from '@/shared/utils/discount'
 import { CURRENCY_SYMBOLS } from '@/shared/api/types'
 import type { Currency, ItemOut } from '@/shared/api/types'
 
@@ -40,9 +46,10 @@ const saving = ref(false)
 
 const target = computed(() => props.item ?? picked.value)
 const oldPrice = computed(() => target.value?.list_price ?? null)
-const symbol = computed(() =>
-  CURRENCY_SYMBOLS[(target.value?.price_currency ?? 'BYN') as Currency],
+const currency = computed<Currency>(
+  () => (target.value?.price_currency ?? 'BYN') as Currency,
 )
+const symbol = computed(() => CURRENCY_SYMBOLS[currency.value])
 
 const newPrice = computed(() => {
   const n = Number(priceInput.value.replace(/\s/g, '').replace(',', '.'))
@@ -86,7 +93,7 @@ watch(
 function setPercent(p: number): void {
   if (oldPrice.value === null || oldPrice.value === undefined) return
   hapticSelection()
-  priceInput.value = String(applyPercent(oldPrice.value, p))
+  priceInput.value = String(applyPercent(oldPrice.value, p, currency.value))
 }
 
 let searchTimer: number | null = null
@@ -125,7 +132,11 @@ async function submit(): Promise<void> {
     // datetime-local отдаёт местное время без зоны — переводим явно,
     // иначе сервер прочитает его как UTC и скидка уйдёт не тогда.
     const iso = when.value ? new Date(when.value).toISOString() : null
-    await discountsApi.create(target.value.id, roundPrice(newPrice.value), iso)
+    await discountsApi.create(
+      target.value.id,
+      roundPrice(newPrice.value, currency.value),
+      iso,
+    )
     hapticImpact('medium')
     toast.success(iso ? 'Скидка запланирована' : 'Скидка объявлена в канале')
     if (!iso) await items.reloadItem(target.value.id)
@@ -191,12 +202,16 @@ async function submit(): Promise<void> {
         <input v-model="priceInput" class="field" inputmode="decimal" placeholder="0" />
         <p v-if="newPrice !== null && percent > 0" class="hint">
           Скидка {{ percent }}% · было {{ oldPrice }} {{ symbol }}, станет
-          {{ roundPrice(newPrice) }} {{ symbol }}
+          {{ roundPrice(newPrice, currency) }} {{ symbol }}
         </p>
 
         <label class="lbl">Когда объявить</label>
         <input v-model="when" type="datetime-local" class="field" :min="minWhen" />
         <p class="note">Пусто — объявим сразу, ответом на пост вещи в канале.</p>
+        <p v-if="stepFor(currency) > 1" class="note">
+          Цена округляется вниз до {{ stepFor(currency) }} {{ symbol }} — чтобы
+          в ценнике не было единиц.
+        </p>
 
         <p v-if="problem" class="note warn">{{ problem }}</p>
 

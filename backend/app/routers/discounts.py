@@ -90,7 +90,8 @@ async def create_discount(
     if old is None:
         raise HTTPException(422, "У вещи нет цены — сначала укажите её")
 
-    new = svc.round_price(Decimal(str(payload.new_price)))
+    currency = item.price_currency or "BYN"
+    new = svc.round_price(Decimal(str(payload.new_price)), currency)
     if new <= 0:
         raise HTTPException(422, "Цена со скидкой должна быть больше нуля")
     if new >= Decimal(old):
@@ -116,7 +117,7 @@ async def create_discount(
         item_id=item.id,
         old_price=Decimal(old),
         new_price=new,
-        currency=item.price_currency or "BYN",
+        currency=currency,
         scheduled_at=when,
         created_by=user.id,
     )
@@ -134,9 +135,7 @@ async def create_discount(
         ).scalar_one_or_none()
         item.price_before_discount = Decimal(old)
         item.list_price_orig = new
-        item.list_price = await fx.convert(
-            new, item.price_currency or "BYN", (base or "BYN")
-        )
+        item.list_price = await fx.convert(new, currency, (base or "BYN"))
     await session.commit()
     await session.refresh(discount)
 

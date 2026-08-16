@@ -26,13 +26,27 @@ def sign():
     f["hash"]=hmac.new(sec,d.encode(),hashlib.sha256).hexdigest(); return urlencode(f)
 
 def test_math():
-    print("\n[1] Округление и проценты")
-    chk(svc.apply_percent(Decimal("149"),30)==Decimal("104"), "149 −30% -> 104 (не 104.30)",
-        str(svc.apply_percent(Decimal("149"),30)))
-    chk(svc.apply_percent(Decimal("150"),20)==Decimal("120"), "150 −20% -> 120")
-    chk(svc.apply_percent(Decimal("99"),10)==Decimal("89"), "99 −10% -> 89 (вниз, не 90)",
-        str(svc.apply_percent(Decimal("99"),10)))
-    chk(svc.round_price(Decimal("104.99"))==Decimal("104"), "копеек не остаётся")
+    print("\n[1] Округление: белорусский рубль — до целых")
+    chk(svc.apply_percent(Decimal("149"),30,"BYN")==Decimal("104"), "149 −30% -> 104 (не 104.30)",
+        str(svc.apply_percent(Decimal("149"),30,"BYN")))
+    chk(svc.apply_percent(Decimal("150"),20,"BYN")==Decimal("120"), "150 −20% -> 120")
+    chk(svc.apply_percent(Decimal("99"),10,"BYN")==Decimal("89"), "99 −10% -> 89 (вниз, не 90)",
+        str(svc.apply_percent(Decimal("99"),10,"BYN")))
+    chk(svc.round_price(Decimal("104.99"),"BYN")==Decimal("104"), "копеек не остаётся")
+
+    print("\n[2] Округление: российский рубль — до десятков")
+    chk(svc.apply_percent(Decimal("1547"),0,"RUB")==Decimal("1540"), "1547 -> 1540 (единиц нет)",
+        str(svc.apply_percent(Decimal("1547"),0,"RUB")))
+    chk(svc.apply_percent(Decimal("5000"),30,"RUB")==Decimal("3500"), "5000 −30% -> 3500")
+    chk(svc.apply_percent(Decimal("999"),10,"RUB")==Decimal("890"), "999 −10% -> 890 (899.1 вниз)",
+        str(svc.apply_percent(Decimal("999"),10,"RUB")))
+    chk(str(svc.round_price(Decimal("1549"),"RUB")).endswith("0"), "последняя цифра всегда ноль")
+    chk(svc.round_price(Decimal("7"),"RUB")==Decimal("7"),
+        "дешёвая вещь не обнуляется, режем до целых", str(svc.round_price(Decimal("7"),"RUB")))
+    chk(svc.step_for("USD")==Decimal("1") and svc.step_for(None)==Decimal("1"),
+        "прочие валюты и пустая — до целых")
+
+    print("\n[3] Проценты")
     chk(svc.percent_of(Decimal("150"),Decimal("105"))==30, "процент считается по ценам")
     chk(svc.percent_of(Decimal("0"),Decimal("0"))==0, "нулевая цена не роняет расчёт")
 
@@ -56,7 +70,7 @@ async def main():
     try:
         tr=httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=tr, base_url="http://test") as c:
-            print("\n[2] Скидка сразу")
+            print("\n[4] Скидка сразу")
             r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":105})
             chk(r.status_code==201, "создана", f"{r.status_code} {r.text[:150]}")
             chk(r.json()["percent"]==30, "процент 30", str(r.json().get("percent")))
@@ -71,7 +85,7 @@ async def main():
             chk(len(jobs)==1, "задание на объявление создано", str(len(jobs)))
             chk(jobs[0].message_id==555, "ответ повесится на пост вещи", str(jobs[0].message_id))
 
-            print("\n[3] Проверки на входе")
+            print("\n[5] Проверки на входе")
             r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":200})
             chk(r.status_code==422 and "меньше" in r.text, "цена выше текущей отклонена", r.text[:120])
             r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":105})
@@ -82,7 +96,7 @@ async def main():
             r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":50,"scheduled_at":past})
             chk(r.status_code==422, "прошлое отклонено", str(r.status_code))
 
-            print("\n[4] Отложенная скидка")
+            print("\n[6] Отложенная скидка")
             when=(datetime.now(timezone.utc)+timedelta(hours=5)).isoformat()
             r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":80,"scheduled_at":when})
             chk(r.status_code==201, "запланирована", f"{r.status_code} {r.text[:120]}")
@@ -99,7 +113,7 @@ async def main():
                 taken=await __import__("app.services.post_queue", fromlist=["x"]).claim(s, limit=10)
             chk(all(j.discount_id != uuid.UUID(did) for j in taken), "воркер её пока не берёт")
 
-            print("\n[5] Отмена")
+            print("\n[7] Отмена")
             r=await c.delete(f"{B}/{did}", headers=h)
             chk(r.status_code==204, "отменена", str(r.status_code))
             async with SessionLocal() as s:
@@ -108,7 +122,7 @@ async def main():
             chk(d.status==DiscountStatus.CANCELLED, "статус CANCELLED")
             chk(all(j.status==JobStatus.CANCELLED for j in jobs), "задания сняты")
 
-            print("\n[6] Список")
+            print("\n[8] Список")
             r=await c.get(B, headers=h, params={"item_id":str(iid),"include_done":True})
             chk(r.status_code==200 and len(r.json())>=2, "история по вещи", str(len(r.json())))
             chk(r.json()[0]["item_sku"]=="#D1", "в списке видно артикул")
