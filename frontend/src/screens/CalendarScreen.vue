@@ -7,7 +7,9 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { closeOverlay } from '@/app/navigation'
-import { postsApi } from '@/shared/api/endpoints'
+import { discountsApi, postsApi } from '@/shared/api/endpoints'
+import DiscountSheet from '@/components/DiscountSheet.vue'
+import type { Discount } from '@/shared/api/types'
 import { ApiError } from '@/shared/api/http'
 import { useToastStore } from '@/stores/toast'
 import { hapticImpact, hapticSelection } from '@/shared/telegram/webapp'
@@ -26,6 +28,35 @@ const when = ref('')
 const saving = ref(false)
 const confirmId = ref<string | null>(null)
 
+// --- Скидки в плане ---
+const discountOpen = ref(false)
+const discounts = ref<Discount[]>([])
+
+async function loadDiscounts(): Promise<void> {
+  try {
+    discounts.value = await discountsApi.list(undefined, showDone.value)
+  } catch {
+    /* необязательно — молчим */
+  }
+}
+
+async function cancelDiscount(d: Discount): Promise<void> {
+  try {
+    await discountsApi.cancel(d.id)
+    toast.success('Скидка отменена')
+    await loadDiscounts()
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось отменить')
+  }
+}
+
+function discountTime(d: Discount): string {
+  if (!d.scheduled_at) return 'сразу'
+  return new Date(d.scheduled_at).toLocaleString('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
+
 function msg(e: unknown, fallback: string): string {
   if (e instanceof ApiError) return e.message || fallback
   return e instanceof Error ? e.message : fallback
@@ -43,7 +74,10 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadDiscounts()
+})
 
 /** Минимум для input[type=datetime-local] — сейчас, в местном времени. */
 const minWhen = computed(() => {
@@ -161,9 +195,28 @@ async function toggleDone(): Promise<void> {
             <button class="btn-secondary tap" @click="composing = false">Отмена</button>
           </div>
         </template>
-        <button v-else class="btn-primary tap" @click="composing = true">
-          + Новый пост
-        </button>
+        <template v-else>
+          <button class="btn-primary tap" @click="composing = true">+ Новый пост</button>
+          <button class="btn-secondary tap gap-top" @click="discountOpen = true">
+            % Скидка на вещь
+          </button>
+        </template>
+      </section>
+
+      <section v-if="discounts.length" class="block">
+        <h2 class="day-title">Скидки</h2>
+        <div v-for="d in discounts" :key="d.id" class="card" :class="d.status.toLowerCase()">
+          <div class="card-head">
+            <span class="time">{{ discountTime(d) }}</span>
+            <span class="status">−{{ d.percent }}%</span>
+          </div>
+          <p class="body">
+            {{ d.item_sku }} · {{ d.item_title }} — {{ d.old_price }} → <b>{{ d.new_price }}</b>
+          </p>
+          <div v-if="d.status === 'SCHEDULED'" class="actions">
+            <button class="link negative tap" @click="cancelDiscount(d)">Отменить</button>
+          </div>
+        </div>
       </section>
 
       <section class="block">
@@ -197,6 +250,8 @@ async function toggleDone(): Promise<void> {
         </div>
       </section>
     </div>
+
+    <DiscountSheet v-model="discountOpen" :item="null" @created="loadDiscounts" />
   </div>
 </template>
 
@@ -365,5 +420,8 @@ async function toggleDone(): Promise<void> {
 }
 .empty {
   padding: 8px 0;
+}
+.gap-top {
+  margin-top: var(--gap);
 }
 </style>

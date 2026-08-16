@@ -50,6 +50,8 @@ export interface ItemOut {
   cost_price_base?: number | null
   selling_price_base?: number | null
   list_price_base?: number | null
+  /** Цена до скидки — для зачёркнутого ценника. */
+  price_before_discount?: number | null
   net_profit?: number | null
   roi_percent?: number | null
   purchase_location?: string | null
@@ -144,6 +146,21 @@ export interface VoiceCaptureStatus {
   fields: VoiceParseResult | null
   transcript: string | null
   error: string | null
+}
+
+/** Скидка на вещь. */
+export interface Discount {
+  id: string
+  item_id: string
+  item_sku: string | null
+  item_title: string | null
+  old_price: number
+  new_price: number
+  percent: number
+  currency: Currency
+  scheduled_at: string | null
+  status: 'SCHEDULED' | 'PUBLISHED' | 'CANCELLED'
+  created_at: string
 }
 
 export interface StaleBucket {

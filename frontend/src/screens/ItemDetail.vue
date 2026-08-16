@@ -6,6 +6,9 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import AuthImage from '@/shared/ui/AuthImage.vue'
+import DiscountSheet from '@/components/DiscountSheet.vue'
+import { discountsApi } from '@/shared/api/endpoints'
+import type { Discount } from '@/shared/api/types'
 import StatusBadge from '@/shared/ui/StatusBadge.vue'
 import { itemsApi } from '@/shared/api/endpoints'
 import { useItemsStore } from '@/stores/items'
@@ -58,6 +61,41 @@ const saving = ref(false)
 const busy = ref(false)
 const confirmDelete = ref(false)
 
+// --- Скидки ---
+const discountOpen = ref(false)
+const discounts = ref<Discount[]>([])
+
+async function loadDiscounts(): Promise<void> {
+  const it = item.value
+  if (!it) return
+  try {
+    discounts.value = await discountsApi.list(it.id, true)
+  } catch {
+    /* история необязательна — молчим */
+  }
+}
+
+async function onDiscountCreated(): Promise<void> {
+  await loadDiscounts()
+}
+
+async function cancelDiscount(d: Discount): Promise<void> {
+  try {
+    await discountsApi.cancel(d.id)
+    toast.success('Скидка отменена')
+    await loadDiscounts()
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось отменить')
+  }
+}
+
+function discountWhen(d: Discount): string {
+  if (!d.scheduled_at) return 'сразу'
+  return new Date(d.scheduled_at).toLocaleString('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
+
 function numToStr(v: number | null | undefined): string {
   return v === null || v === undefined ? '' : String(v)
 }
@@ -87,6 +125,7 @@ function syncForm(): void {
 }
 
 watch(() => nav.detailItemId, syncForm, { immediate: true })
+watch(() => nav.detailItemId, () => void loadDiscounts(), { immediate: true })
 
 // Фоновая AI-генерация могла доехать, пока карточка открыта: подтягиваем
 // новые название/описание в форму, но НЕ затираем то, что юзер уже правил.
@@ -370,6 +409,37 @@ const photoIndexes = computed(() =>
         <p v-else class="hint small">Дальнейших переходов нет.</p>
       </section>
 
+      <!-- Скидка -->
+      <section class="block">
+        <h2 class="block-title">Скидка</h2>
+        <div class="status-now">
+          Цена:
+          <template v-if="item.price_before_discount">
+            <s class="old-price">{{ item.price_before_discount }}</s>
+          </template>
+          <b>{{ item.list_price ?? '—' }}</b>
+        </div>
+        <button class="wide tap" :disabled="item.list_price === null || item.list_price === undefined"
+                @click="discountOpen = true">
+          Сделать скидку
+        </button>
+        <p v-if="item.list_price === null || item.list_price === undefined" class="hint small">
+          Сначала укажите цену продажи — от неё считается скидка.
+        </p>
+
+        <div v-if="discounts.length" class="dlist">
+          <div v-for="d in discounts" :key="d.id" class="drow" :class="d.status.toLowerCase()">
+            <span class="dmain">
+              −{{ d.percent }}% · {{ d.old_price }} → <b>{{ d.new_price }}</b>
+            </span>
+            <span class="hint small">{{ discountWhen(d) }}</span>
+            <button v-if="d.status === 'SCHEDULED'" class="link small tap" @click="cancelDiscount(d)">
+              Отменить
+            </button>
+          </div>
+        </div>
+      </section>
+
       <!-- Основное -->
       <section class="block">
         <h2 class="block-title">Основное</h2>
@@ -511,6 +581,8 @@ const photoIndexes = computed(() =>
       </button>
     </div>
   </div>
+
+    <DiscountSheet v-model="discountOpen" :item="item" @created="onDiscountCreated" />
 </template>
 
 <style scoped>
@@ -739,5 +811,47 @@ const photoIndexes = computed(() =>
 }
 .save:disabled {
   opacity: 0.5;
+}
+.old-price {
+  color: var(--tg-theme-hint-color);
+  margin-right: 6px;
+}
+.wide {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 10px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
+  font-size: 15px;
+  font-weight: 700;
+}
+.wide:disabled {
+  opacity: 0.5;
+}
+.dlist {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+}
+.drow.published {
+  opacity: 0.65;
+}
+.drow.cancelled {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.dmain {
+  flex: 1;
+  font-size: 13px;
 }
 </style>

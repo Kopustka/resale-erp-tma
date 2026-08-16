@@ -288,6 +288,49 @@ async def _run_job(job: PostJob) -> None:
                 )
                 await session.commit()
 
+            elif job.kind == JobKind.DISCOUNT_POST:
+                from ..models import Discount, DiscountStatus
+                from .discounts import build_message
+                from .fx import symbol as cur_symbol
+
+                d = (
+                    await session.execute(
+                        select(Discount).where(Discount.id == job.discount_id)
+                    )
+                ).scalar_one_or_none()
+                if d is None or d.status == DiscountStatus.CANCELLED:
+                    await post_queue.mark_done(session, job.id)  # отменили, пока ждал
+                    return
+                item = (
+                    await session.execute(select(Item).where(Item.id == job.item_id))
+                ).scalar_one_or_none()
+                # Отложенную скидку применяем к вещи в момент публикации:
+                # до этого она продавалась по старой цене, и менять её
+                # заранее было бы неверно. Повторный прогон по второму
+                # каналу ничего не испортит — значения те же.
+                if item is not None and item.list_price_orig != d.new_price:
+                    from .fx import convert as fx_convert
+
+                    item.price_before_discount = d.old_price
+                    item.list_price_orig = d.new_price
+                    item.list_price = await fx_convert(
+                        d.new_price, d.currency, item.cost_currency or "BYN"
+                    )
+                    await session.commit()
+                await _respect_rate_limit(job.channel_id)
+                await telegram_post.reply_to(
+                    job.channel_id,
+                    job.message_id,
+                    build_message(d, item.title if item else None, cur_symbol(d.currency)),
+                )
+                await session.execute(
+                    update(Discount)
+                    .where(Discount.id == d.id)
+                    .values(status=DiscountStatus.PUBLISHED)
+                    .execution_options(synchronize_session=False)
+                )
+                await session.commit()
+
             elif job.kind == JobKind.NOTIFY_SUB:
                 from .preview import notify_subscriber
 

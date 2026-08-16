@@ -95,6 +95,7 @@ def to_out(item: Item, *, show_finance: bool) -> ItemOut:
         list_price=item.list_price_orig,
         list_price_base=item.list_price,
         price_currency=item.price_currency,
+        price_before_discount=item.price_before_discount,
     )
     if show_finance:
         data.update(

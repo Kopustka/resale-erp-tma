@@ -102,6 +102,8 @@ class ItemOut(BaseModel):
     cost_price_base: float | None = None
     selling_price_base: float | None = None
     list_price_base: float | None = None
+    # Цена до скидки — для зачёркнутого ценника в карточке.
+    price_before_discount: float | None = None
     net_profit: float | None = None
     roi_percent: float | None = None
     purchase_location: str | None = None
@@ -381,6 +383,28 @@ class CustomPostOut(BaseModel):
     id: uuid.UUID
     body: str
     photo_count: int
+    scheduled_at: datetime | None = None
+    status: str
+    created_at: datetime
+
+
+# --------------------------- Скидки --------------------------- #
+class DiscountCreate(BaseModel):
+    item_id: uuid.UUID
+    new_price: float = Field(..., gt=0)
+    # None — объявить сразу
+    scheduled_at: datetime | None = None
+
+
+class DiscountOut(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    item_sku: str | None = None
+    item_title: str | None = None
+    old_price: Decimal
+    new_price: Decimal
+    percent: int
+    currency: str
     scheduled_at: datetime | None = None
     status: str
     created_at: datetime

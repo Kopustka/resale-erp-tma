@@ -16,6 +16,7 @@ from .db import Base, engine
 from .routers import (
     analytics,
     channels,
+    discounts,
     drops,
     items,
     media,
@@ -45,6 +46,8 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS sub_id UUID",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS drop_id UUID",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS custom_post_id UUID",
+    "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS discount_id UUID",
+    "ALTER TABLE items ADD COLUMN IF NOT EXISTS price_before_discount NUMERIC(12,2)",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_chat_id BIGINT",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_message_id BIGINT",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
@@ -60,6 +63,7 @@ _ENSURE_ENUM_VALUES = (
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'DROP_POST'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'CUSTOM_POST'",
     "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'UNPUBLISH'",
+    "ALTER TYPE job_kind_enum ADD VALUE IF NOT EXISTS 'DISCOUNT_POST'",
     "ALTER TYPE job_status_enum ADD VALUE IF NOT EXISTS 'AWAITING'",
 )
 
@@ -167,5 +171,6 @@ app.include_router(stores.router)
 app.include_router(media.router)
 app.include_router(templates.router)
 app.include_router(channels.router)
+app.include_router(discounts.router)
 app.include_router(drops.router)
 app.include_router(posts.router)

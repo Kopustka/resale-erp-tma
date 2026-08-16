@@ -64,6 +64,13 @@ const priceValue = computed<number | null | undefined>(() =>
     : (props.item.list_price_base ?? props.item.selling_price_base ?? props.item.cost_price_base),
 )
 
+/** Цена до скидки: показываем зачёркнутой рядом с новой. */
+const oldPriceValue = computed<number | null>(() =>
+  !soldLike.value && props.item.price_before_discount != null
+    ? props.item.price_before_discount
+    : null,
+)
+
 /** Прогресс жеста 0..1 к порогу — для плавной подсветки фона-действия. */
 const progressRight = computed(() => Math.min(1, Math.max(0, dx.value) / THRESHOLD))
 const progressLeft = computed(() => Math.min(1, Math.max(0, -dx.value) / THRESHOLD))
@@ -218,6 +225,7 @@ onBeforeUnmount(detachScrollLock)
           {{ item.brand }} · {{ item.category }}<span v-if="item.size"> · {{ item.size }}</span>
         </div>
         <div v-if="showFinance" class="price-row">
+          <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
           <Money :value="priceValue" :colored="soldLike" strong />
         </div>
       </div>
@@ -334,5 +342,11 @@ onBeforeUnmount(detachScrollLock)
   50% {
     opacity: 1;
   }
+}
+.was {
+  text-decoration: line-through;
+  color: var(--tg-theme-hint-color);
+  margin-right: 6px;
+  font-size: 12px;
 }
 </style>

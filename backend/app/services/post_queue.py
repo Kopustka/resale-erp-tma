@@ -41,6 +41,7 @@ async def enqueue(
     sub_id: uuid.UUID | None = None,
     drop_id: uuid.UUID | None = None,
     custom_post_id: uuid.UUID | None = None,
+    discount_id: uuid.UUID | None = None,
     run_at: datetime | None = None,
     delay_seconds: int = 0,
 ) -> PostJob:
@@ -56,6 +57,7 @@ async def enqueue(
         sub_id=sub_id,
         drop_id=drop_id,
         custom_post_id=custom_post_id,
+        discount_id=discount_id,
         # run_at важнее delay_seconds: расписание задаёт точный момент.
         run_after=run_at or (_now() + timedelta(seconds=delay_seconds)),
     )

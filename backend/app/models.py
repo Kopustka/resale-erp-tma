@@ -279,6 +279,11 @@ class Item(Base):
     )
     # id опубликованного поста в канале (дедуп + пометка «продано»)
     channel_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Цена до последней скидки: нужна, чтобы показать зачёркнутый старый
+    # ценник. Без отдельного поля она терялась бы при перезаписи list_price.
+    price_before_discount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
     # Когда вещь последний раз поднимали в канале (защита от бампа по кругу).
     bumped_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -376,6 +381,7 @@ class JobKind(str, enum.Enum):
     EDIT_CAPTION = "EDIT_CAPTION"  # перерисовать подпись (сменилась цена и т.п.)
     BUMP = "BUMP"                # поднять зависшую вещь: удалить пост и дать заново
     NOTIFY_SUB = "NOTIFY_SUB"    # уведомить подписчика о подходящей новинке
+    DISCOUNT_POST = "DISCOUNT_POST"  # объявить скидку ответом на пост вещи
     DROP_POST = "DROP_POST"      # опубликовать несколько вещей одним альбомом
     CUSTOM_POST = "CUSTOM_POST"  # свободный пост без привязки к вещи
     UNPUBLISH = "UNPUBLISH"      # снять вещь с публикации (откат из «выставлен»)
@@ -416,6 +422,10 @@ class PostJob(Base):
     channel_id: Mapped[str] = mapped_column(String(80))
     # Ссылка на канал: нужна, чтобы записать ItemPost после публикации.
     channel_uid: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    # Какую скидку объявляем (для DISCOUNT_POST).
+    discount_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), nullable=True
     )
     # Какой свободный пост публикуем (для CUSTOM_POST).
@@ -618,4 +628,47 @@ class CustomPost(Base):
 
     __table_args__ = (
         Index("ix_custom_store_when", "store_id", "scheduled_at"),
+    )
+
+
+class DiscountStatus(str, enum.Enum):
+    SCHEDULED = "SCHEDULED"
+    PUBLISHED = "PUBLISHED"
+    CANCELLED = "CANCELLED"
+
+
+class Discount(Base):
+    """Скидка на вещь: сразу или по расписанию.
+
+    Хранит цену до и после — по ним считается процент и рисуется
+    зачёркнутый старый ценник, даже если вещь потом подешевеет ещё раз.
+    """
+
+    __tablename__ = "discounts"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("items.id"), index=True
+    )
+    old_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    new_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="BYN")
+    # NULL — публикуем сразу.
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    status: Mapped[DiscountStatus] = mapped_column(
+        SAEnum(DiscountStatus, name="discount_status_enum"),
+        default=DiscountStatus.SCHEDULED,
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        Index("ix_discount_store_when", "store_id", "scheduled_at"),
     )

@@ -308,6 +308,35 @@ async def send_text(channel_id: str, text: str) -> int | None:
     return _msg_id(r)
 
 
+async def reply_to(channel_id: str, message_id: int, text: str) -> int | None:
+    """Сообщение ответом на пост вещи.
+
+    Если исходный пост удалён, Telegram отвечает ошибкой про reply — тогда
+    шлём обычным сообщением: объявление о скидке важнее привязки к посту.
+    """
+    payload = {
+        "chat_id": channel_id,
+        "text": text[:4096],
+        "parse_mode": "HTML",
+        "reply_parameters": {"message_id": message_id, "allow_sending_without_reply": True},
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{API}/sendMessage", json=payload)
+        data = r.json()
+        if not data.get("ok"):
+            desc = str(data.get("description", "")).lower()
+            if "reply" in desc or "not found" in desc:
+                log.info("ответ не привязался (%s), шлём обычным сообщением", desc)
+                r = await client.post(
+                    f"{API}/sendMessage",
+                    json={"chat_id": channel_id, "text": text[:4096], "parse_mode": "HTML"},
+                )
+                data = r.json()
+    if not data.get("ok"):
+        raise ChannelError(data.get("description", f"HTTP {r.status_code}"))
+    return data["result"]["message_id"]
+
+
 async def send_test(channel_id: str) -> None:
     """Проверка: бот шлёт тестовое сообщение в канал. Бросает ChannelError."""
     async with httpx.AsyncClient(timeout=20) as client:

@@ -10,6 +10,7 @@ import type {
   ChannelPatch,
   ChannelSettings,
   CustomPost,
+  Discount,
   DropOut,
   ChannelUpdate,
   Currency,
@@ -172,6 +173,22 @@ export const templatesApi = {
 
   /** Снять сессию на сервере, чтобы бот перестал ждать пример поста. */
   cancelCapture: (token: string) => http.del<void>(`${V1}/templates/capture/${token}`),
+}
+
+// ------------------------------- Скидки ------------------------------- //
+export const discountsApi = {
+  list: (itemId?: string, includeDone = false) =>
+    http.get<Discount[]>(`${V1}/discounts`, {
+      item_id: itemId ?? undefined,
+      include_done: includeDone || undefined,
+    }),
+  create: (itemId: string, newPrice: number, scheduledAt: string | null) =>
+    http.post<Discount>(`${V1}/discounts`, {
+      item_id: itemId,
+      new_price: newPrice,
+      scheduled_at: scheduledAt,
+    }),
+  cancel: (id: string) => http.del<void>(`${V1}/discounts/${id}`),
 }
 
 // ------------------------------- Дропы ------------------------------- //
