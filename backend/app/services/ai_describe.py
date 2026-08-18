@@ -11,9 +11,8 @@ import json
 import mimetypes
 from pathlib import Path
 
-import httpx
-
 from ..config import get_settings
+from . import gemini
 
 settings = get_settings()
 
@@ -108,32 +107,20 @@ async def generate_item_description(
     if attached == 0:
         raise AiGenerationError("Не удалось загрузить ни одного фото")
 
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
-    )
-    body = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.7,
-        },
-    }
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(
-            url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
-        )
-    if r.status_code == 429:
-        raise AiGenerationError("Квота Gemini исчерпана — попробуйте чуть позже")
-    if r.status_code != 200:
-        raise AiGenerationError(f"Gemini API: HTTP {r.status_code}")
+    # Через общий вызов: повторы на перегрузке и переход на запасную
+    # модель при исчерпанной квоте. Раньше здесь была своя копия логики,
+    # и генерация падала на первом же 503.
+    try:
+        parsed = await gemini.call_json(parts, timeout=45, temperature=0.7)
+    except gemini.GeminiQuotaExceeded:
+        raise AiGenerationError("Дневной лимит Gemini исчерпан — обновите ключ")
+    except gemini.GeminiUnavailable as e:
+        raise AiGenerationError(f"Модель недоступна: {e}")
 
     try:
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(text)
         title = str(parsed["title"]).strip()[:100]
         description = str(parsed["description"]).strip()
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
+    except (KeyError, TypeError) as e:
         raise AiGenerationError(f"Не удалось разобрать ответ модели: {e}")
 
     if not title or not description:

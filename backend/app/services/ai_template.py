@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 import re
 
-import httpx
-
 from ..config import get_settings
+from . import gemini
 from .ai_describe import AiGenerationError, AiNotConfigured
 from .post_template import (
     ALLOWED_TAGS,
@@ -108,28 +107,15 @@ def repair(body: str) -> str:
 
 
 async def _ask_gemini(prompt: str, timeout: int = 45) -> dict:
-    """Один запрос к модели со строгим JSON на выходе."""
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
-    )
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.4},
-    }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        r = await client.post(
-            url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
-        )
-    if r.status_code == 429:
-        raise AiGenerationError("Квота Gemini исчерпана — попробуйте чуть позже")
-    if r.status_code != 200:
-        raise AiGenerationError(f"Gemini API: HTTP {r.status_code}")
+    """Обёртка над общим вызовом: повторы и запасная модель уже внутри."""
     try:
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
-        raise AiGenerationError(f"Не удалось разобрать ответ модели: {e}")
+        return await gemini.call_json(
+            [{"text": prompt}], timeout=timeout, temperature=0.4, budget=40
+        )
+    except gemini.GeminiQuotaExceeded:
+        raise AiGenerationError("Дневной лимит Gemini исчерпан — обновите ключ")
+    except gemini.GeminiUnavailable as e:
+        raise AiGenerationError(f"Модель недоступна: {e}")
 
 
 def _finish(parsed: dict, fallback_name: str) -> dict[str, str]:
@@ -167,35 +153,15 @@ async def clone_template_from_sample(sample_html: str) -> dict[str, str]:
         raise AiGenerationError("Пустой пример поста")
     sample = sample[:MAX_SAMPLE_CHARS]
 
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{settings.gemini_model}:generateContent"
+    # Тот же общий вызов: без него клонирование падало на первом же 503,
+    # хотя рядом лежала живая запасная модель.
+    parsed = await _ask_gemini(
+        CLONE_PROMPT + "\n\nПРИМЕР ПОСТА:\n" + sample, timeout=30
     )
-    body = {
-        "contents": [
-            {"parts": [{"text": CLONE_PROMPT + "\n\nПРИМЕР ПОСТА:\n" + sample}]}
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            # Низкая температура: копируем чужую вёрстку, творчество здесь вредит.
-            "temperature": 0.2,
-        },
-    }
-    async with httpx.AsyncClient(timeout=45) as client:
-        r = await client.post(
-            url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}
-        )
-    if r.status_code == 429:
-        raise AiGenerationError("Квота Gemini исчерпана — попробуйте чуть позже")
-    if r.status_code != 200:
-        raise AiGenerationError(f"Gemini API: HTTP {r.status_code}")
-
     try:
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(text)
         name = str(parsed.get("name") or "").strip()[:60]
         tpl_body = str(parsed["body"])
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
+    except (KeyError, TypeError) as e:
         raise AiGenerationError(f"Не удалось разобрать ответ модели: {e}")
 
     try:

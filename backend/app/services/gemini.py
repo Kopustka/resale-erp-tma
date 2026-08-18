@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 import httpx
 
@@ -35,13 +36,38 @@ class GeminiQuotaExceeded(GeminiUnavailable):
     """Исчерпаны лимиты и основной, и запасной модели."""
 
 
+# Когда у модели кончилась квота, она не восстановится через секунду.
+# Помним об этом и какое-то время не тратим на неё запросы: иначе каждый
+# вызов сначала впустую бьётся в основную модель и добавляет секунды
+# ожидания на ровном месте.
+QUOTA_MEMO_SECONDS = 600
+_quota_out: dict[str, float] = {}
+
+
+def _is_out(model: str) -> bool:
+    until = _quota_out.get(model)
+    if until is None:
+        return False
+    if time.monotonic() >= until:
+        del _quota_out[model]
+        return False
+    return True
+
+
+def _mark_out(model: str) -> None:
+    _quota_out[model] = time.monotonic() + QUOTA_MEMO_SECONDS
+
+
 def _models() -> list[str]:
     primary = settings.gemini_model
     fallback = getattr(settings, "gemini_fallback_model", "") or ""
-    out = [primary]
+    candidates = [primary]
     if fallback and fallback != primary:
-        out.append(fallback)
-    return out
+        candidates.append(fallback)
+    # Исчерпанные пропускаем, но если исчерпаны все — пробуем как есть:
+    # вдруг лимит уже сбросился раньше, чем истёк наш запомненный срок.
+    fresh = [m for m in candidates if not _is_out(m)]
+    return fresh or candidates
 
 
 async def _post(model: str, body: dict, timeout: int) -> httpx.Response:
@@ -59,10 +85,19 @@ async def call_json(
     timeout: int = 45,
     temperature: float = 0.2,
     attempts: int = 3,
+    budget: float | None = None,
 ) -> dict:
-    """Запрос со строгим JSON на выходе. Бросает GeminiUnavailable."""
+    """Запрос со строгим JSON на выходе. Бросает GeminiUnavailable.
+
+    budget — общий предел в секундах на все попытки и все модели. Без него
+    перегруженная модель заставляла ждать больше минуты: три повтора по
+    таймауту, да ещё на двух моделях. Пользователю нужен ответ или отказ,
+    а не бесконечное ожидание.
+    """
     if not settings.gemini_api_key:
         raise GeminiUnavailable("нет ключа")
+
+    deadline = time.monotonic() + (budget if budget is not None else timeout + 20)
 
     body = {
         "contents": [{"parts": parts}],
@@ -76,11 +111,15 @@ async def call_json(
     quota_hit = False
     for model in _models():
         for attempt in range(attempts):
+            left = deadline - time.monotonic()
+            if left <= 1:
+                last = "превышен общий лимит ожидания"
+                break
             try:
-                r = await _post(model, body, timeout)
+                r = await _post(model, body, min(timeout, int(left)))
             except Exception as e:  # noqa: BLE001
                 last = f"сеть: {e}"
-                if attempt < attempts - 1:
+                if attempt < attempts - 1 and deadline - time.monotonic() > 2:
                     await asyncio.sleep(0.8 * (attempt + 1))
                     continue
                 break
@@ -99,11 +138,14 @@ async def call_json(
                 # Повторять бессмысленно — сразу к запасной модели.
                 quota_hit = True
                 last = "квота исчерпана"
+                _mark_out(model)
                 log.warning("квота исчерпана у %s, пробуем запасную", model)
                 break
 
             if r.status_code in TRANSIENT and attempt < attempts - 1:
                 last = f"HTTP {r.status_code}"
+                if deadline - time.monotonic() <= 2:
+                    break
                 await asyncio.sleep(0.8 * (attempt + 1))
                 continue
 
