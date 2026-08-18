@@ -253,6 +253,7 @@ class ChannelSettings(BaseModel):
     preview_before_post: bool = False
     subscriptions_enabled: bool = False
     auto_reply_enabled: bool = False
+    discount_template: str | None = None
 
 
 class ChannelUpdate(BaseModel):
@@ -266,6 +267,7 @@ class ChannelUpdate(BaseModel):
     preview_before_post: bool | None = None
     subscriptions_enabled: bool | None = None
     auto_reply_enabled: bool | None = None
+    discount_template: str | None = Field(None, max_length=1000)
 
 
 class StoreSettings(BaseModel):
@@ -408,3 +410,12 @@ class DiscountOut(BaseModel):
     scheduled_at: datetime | None = None
     status: str
     created_at: datetime
+
+
+class DiscountTemplateInfo(BaseModel):
+    """Шаблон объявления о скидке: тело, превью и доступные плейсхолдеры."""
+
+    body: str
+    is_default: bool
+    preview: str
+    placeholders: list[TemplatePlaceholder]

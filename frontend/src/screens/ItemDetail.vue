@@ -63,6 +63,20 @@ const confirmDelete = ref(false)
 
 // --- Скидки ---
 const discountOpen = ref(false)
+
+/**
+ * Почему скидку сделать нельзя. null — можно.
+ * Объявление уходит ответом на пост вещи, поэтому до публикации
+ * отвечать не на что.
+ */
+const discountBlock = computed<string | null>(() => {
+  const it = item.value
+  if (!it) return 'Вещь не загружена'
+  if (it.status !== 'LISTED') return 'Скидку можно сделать только на выложенную вещь'
+  if (it.list_price === null || it.list_price === undefined)
+    return 'Сначала укажите цену продажи — от неё считается скидка'
+  return null
+})
 const discounts = ref<Discount[]>([])
 
 async function loadDiscounts(): Promise<void> {
@@ -419,13 +433,10 @@ const photoIndexes = computed(() =>
           </template>
           <b>{{ item.list_price ?? '—' }}</b>
         </div>
-        <button class="wide tap" :disabled="item.list_price === null || item.list_price === undefined"
-                @click="discountOpen = true">
+        <button class="wide tap" :disabled="!!discountBlock" @click="discountOpen = true">
           Сделать скидку
         </button>
-        <p v-if="item.list_price === null || item.list_price === undefined" class="hint small">
-          Сначала укажите цену продажи — от неё считается скидка.
-        </p>
+        <p v-if="discountBlock" class="hint small">{{ discountBlock }}</p>
 
         <div v-if="discounts.length" class="dlist">
           <div v-for="d in discounts" :key="d.id" class="drow" :class="d.status.toLowerCase()">

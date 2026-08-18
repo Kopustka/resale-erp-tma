@@ -51,6 +51,7 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_chat_id BIGINT",
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_message_id BIGINT",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE stores ADD COLUMN IF NOT EXISTS discount_template TEXT",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые

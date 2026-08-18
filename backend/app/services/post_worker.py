@@ -318,10 +318,30 @@ async def _run_job(job: PostJob) -> None:
                     )
                     await session.commit()
                 await _respect_rate_limit(job.channel_id)
+                store = (
+                    await session.execute(
+                        select(Store).where(Store.id == job.store_id)
+                    )
+                ).scalar_one_or_none()
+                signature = store.channel_signature if store else None
+                if job.channel_uid is not None:
+                    ch = (
+                        await session.execute(
+                            select(Channel).where(Channel.id == job.channel_uid)
+                        )
+                    ).scalar_one_or_none()
+                    if ch is not None and ch.signature:
+                        signature = ch.signature
                 await telegram_post.reply_to(
                     job.channel_id,
                     job.message_id,
-                    build_message(d, item.title if item else None, cur_symbol(d.currency)),
+                    build_message(
+                        d,
+                        item,
+                        cur_symbol(d.currency),
+                        store.discount_template if store else None,
+                        signature,
+                    ),
                 )
                 await session.execute(
                     update(Discount)

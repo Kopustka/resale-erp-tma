@@ -27,10 +27,14 @@ from ..schemas import (
     InviteOut,
     MemberOut,
     StoreOut,
+    DiscountTemplateInfo,
     StoreSettings,
     SwitchStore,
+    TemplatePlaceholder,
 )
+from ..services import discounts as discounts_svc
 from ..services import fx, telegram_post
+from ..services.post_template import TemplateError as PostTemplateError
 
 ALLOWED_CURRENCIES = ("BYN", "RUB", "USD", "EUR")
 
@@ -156,6 +160,7 @@ async def get_channel(
         preview_before_post=store.preview_before_post,
         subscriptions_enabled=store.subscriptions_enabled,
         auto_reply_enabled=store.auto_reply_enabled,
+        discount_template=store.discount_template,
     )
 
 
@@ -191,6 +196,19 @@ async def set_channel(
         store.subscriptions_enabled = payload.subscriptions_enabled
     if payload.auto_reply_enabled is not None:
         store.auto_reply_enabled = payload.auto_reply_enabled
+    if payload.discount_template is not None:
+        body = payload.discount_template.strip()
+        if body:
+            # Проверяем до сохранения: битый шаблон иначе ломал бы каждое
+            # объявление о скидке, и понять это можно было бы только по
+            # неотправленным заданиям.
+            try:
+                discounts_svc.validate_template(body)
+            except PostTemplateError as e:
+                raise HTTPException(422, str(e))
+            store.discount_template = body
+        else:
+            store.discount_template = None  # пусто — вернуться к встроенному
 
     # Совместимость: постинг работает по таблице channels, а этот старый
     # эндпоинт правит поля склада. Держим их согласованными, иначе смена
@@ -224,6 +242,25 @@ async def set_channel(
         preview_before_post=store.preview_before_post,
         subscriptions_enabled=store.subscriptions_enabled,
         auto_reply_enabled=store.auto_reply_enabled,
+        discount_template=store.discount_template,
+    )
+
+
+@router.get("/discount-template", response_model=DiscountTemplateInfo)
+async def get_discount_template(
+    member: StoreMember = Depends(require_role(*OWNER_ONLY)),
+    session: AsyncSession = Depends(get_session),
+):
+    """Текущий шаблон объявления о скидке с превью на примере."""
+    store = (
+        await session.execute(select(Store).where(Store.id == member.store_id))
+    ).scalar_one()
+    body = store.discount_template or discounts_svc.DEFAULT_TEMPLATE
+    return DiscountTemplateInfo(
+        body=body,
+        is_default=store.discount_template is None,
+        preview=discounts_svc.render_demo(body),
+        placeholders=[TemplatePlaceholder(**p) for p in discounts_svc.PLACEHOLDERS],
     )
 
 

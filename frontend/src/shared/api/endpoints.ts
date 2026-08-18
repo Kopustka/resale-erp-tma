@@ -11,6 +11,7 @@ import type {
   ChannelSettings,
   CustomPost,
   Discount,
+  DiscountTemplateInfo,
   DropOut,
   ChannelUpdate,
   Currency,
@@ -47,6 +48,7 @@ export const storesApi = {
   setChannel: (patch: ChannelUpdate) =>
     http.patch<ChannelSettings>(`${V1}/stores/channel`, patch),
   testChannel: () => http.post<{ ok: boolean }>(`${V1}/stores/channel/test`),
+  discountTemplate: () => http.get<DiscountTemplateInfo>(`${V1}/stores/discount-template`),
   getSettings: () => http.get<{ base_currency: Currency }>(`${V1}/stores/settings`),
   setBaseCurrency: (base: Currency) =>
     http.patch<{ base_currency: Currency }>(`${V1}/stores/settings`, { base_currency: base }),

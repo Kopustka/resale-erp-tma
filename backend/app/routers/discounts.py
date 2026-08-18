@@ -13,6 +13,7 @@ from ..auth import CAN_EDIT, get_active_membership, get_current_user
 from ..db import get_session
 from ..models import (
     Discount,
+    ItemStatus,
     DiscountStatus,
     Item,
     JobStatus,
@@ -85,6 +86,14 @@ async def create_discount(
     ).scalar_one_or_none()
     if item is None:
         raise HTTPException(404, "Вещь не найдена")
+
+    # Объявление уходит ОТВЕТОМ на пост вещи. Пока вещь не выложена,
+    # поста нет — отвечать не на что, и скидка была бы объявлением
+    # в пустоту.
+    if item.status != ItemStatus.LISTED:
+        raise HTTPException(
+            422, "Скидку можно сделать только на выложенную вещь"
+        )
 
     old = item.list_price_orig
     if old is None:

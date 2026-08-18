@@ -6,8 +6,15 @@ import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useTemplatesStore } from '@/stores/templates'
 import { useToastStore } from '@/stores/toast'
-import { CURRENCIES, CURRENCY_SYMBOLS, type Currency, type Role } from '@/shared/api/types'
+import {
+  CURRENCIES,
+  CURRENCY_SYMBOLS,
+  type Currency,
+  type Role,
+  type TemplatePlaceholder,
+} from '@/shared/api/types'
 import { channelsApi, storesApi } from '@/shared/api/endpoints'
+import { sanitizeTelegramHtml } from '@/shared/utils/sanitize'
 import { hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
@@ -88,6 +95,45 @@ const previewBefore = ref(false)
 const subsEnabled = ref(false)
 const autoReply = ref(false)
 
+// --- Шаблон объявления о скидке ---
+const dtBody = ref('')
+const dtIsDefault = ref(true)
+const dtPlaceholders = ref<TemplatePlaceholder[]>([])
+const dtPreview = ref('')
+const dtOpen = ref(false)
+const dtBusy = ref(false)
+
+async function loadDiscountTemplate(): Promise<void> {
+  try {
+    const t = await storesApi.discountTemplate()
+    dtBody.value = t.body
+    dtIsDefault.value = t.is_default
+    dtPlaceholders.value = t.placeholders
+    dtPreview.value = t.preview
+  } catch {
+    /* необязательно — молчим */
+  }
+}
+
+async function saveDiscountTemplate(): Promise<void> {
+  dtBusy.value = true
+  try {
+    await storesApi.setChannel({ discount_template: dtBody.value.trim() || null })
+    toast.success(dtBody.value.trim() ? 'Шаблон скидки сохранён' : 'Вернул встроенный шаблон')
+    await loadDiscountTemplate()
+    dtOpen.value = false
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
+  } finally {
+    dtBusy.value = false
+  }
+}
+
+function insertPlaceholder(key: string): void {
+  hapticSelection()
+  dtBody.value += `{${key}}`
+}
+
 async function loadChannel(): Promise<void> {
   try {
     const ch = await storesApi.getChannel()
@@ -136,6 +182,7 @@ onMounted(() => {
     void loadChannel()
     void channelsApi.list().then((c) => (channelsCount.value = c.length)).catch(() => undefined)
     void templates.fetch()
+    void loadDiscountTemplate()
     void storesApi.getSettings().then((s) => (baseCurrency.value = s.base_currency))
   }
 })
@@ -408,6 +455,43 @@ function exportCsv(): void {
         <button class="btn-primary tap save-row" :disabled="channelBusy" @click="saveChannel">
           {{ channelBusy ? '…' : 'Сохранить' }}
         </button>
+
+        <button class="nav-row tap" @click="dtOpen = !dtOpen">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Текст скидки</span>
+            <span class="nav-row-sub">
+              {{ dtIsDefault ? 'Встроенный шаблон' : 'Свой шаблон' }}
+            </span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">{{ dtOpen ? '⌄' : '›' }}</span>
+        </button>
+
+        <template v-if="dtOpen">
+          <textarea v-model="dtBody" class="field dt-area" rows="4" maxlength="1000" />
+          <div class="dt-chips">
+            <button
+              v-for="ph in dtPlaceholders"
+              :key="ph.key"
+              class="dt-chip tap"
+              :title="ph.label"
+              @click="insertPlaceholder(ph.key)"
+            >
+              {{ ph.key }}
+            </button>
+          </div>
+          <div v-if="dtPreview" class="dt-preview">
+            <span class="hint">Так выглядит объявление:</span>
+            <div class="dt-preview-body" v-html="sanitizeTelegramHtml(dtPreview)" />
+          </div>
+          <div class="dt-actions">
+            <button class="btn-primary tap" :disabled="dtBusy" @click="saveDiscountTemplate">
+              {{ dtBusy ? '…' : 'Сохранить' }}
+            </button>
+            <button class="btn-secondary tap" @click="dtBody = ''; saveDiscountTemplate()">
+              Вернуть встроенный
+            </button>
+          </div>
+        </template>
 
         <button class="nav-row tap" @click="goCalendar">
           <span class="nav-row-main">
@@ -751,5 +835,42 @@ function exportCsv(): void {
 .field.days {
   width: 90px;
   text-align: center;
+}
+.dt-area {
+  margin-top: 10px;
+  resize: vertical;
+  font: inherit;
+}
+.dt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.dt-chip {
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-link-color);
+  font-size: 12px;
+  font-weight: 700;
+}
+.dt-preview {
+  margin-top: 10px;
+}
+.dt-preview-body {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dt-actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: 12px;
 }
 </style>

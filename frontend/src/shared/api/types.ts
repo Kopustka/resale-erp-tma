@@ -148,6 +148,14 @@ export interface VoiceCaptureStatus {
   error: string | null
 }
 
+/** Шаблон объявления о скидке с превью и палитрой. */
+export interface DiscountTemplateInfo {
+  body: string
+  is_default: boolean
+  preview: string
+  placeholders: TemplatePlaceholder[]
+}
+
 /** Скидка на вещь. */
 export interface Discount {
   id: string
@@ -242,6 +250,7 @@ export interface ChannelSettings {
   preview_before_post: boolean
   subscriptions_enabled: boolean
   auto_reply_enabled: boolean
+  discount_template: string | null
 }
 
 /** Частичное обновление настроек автопостинга. */
@@ -255,6 +264,7 @@ export interface ChannelUpdate {
   preview_before_post?: boolean | null
   subscriptions_enabled?: boolean | null
   auto_reply_enabled?: boolean | null
+  discount_template?: string | null
 }
 
 /** Канал автопостинга склада. */

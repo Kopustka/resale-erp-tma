@@ -126,6 +126,45 @@ async def main():
             r=await c.get(B, headers=h, params={"item_id":str(iid),"include_done":True})
             chk(r.status_code==200 and len(r.json())>=2, "история по вещи", str(len(r.json())))
             chk(r.json()[0]["item_sku"]=="#D1", "в списке видно артикул")
+            print("\n[9] Скидка только на выложенную вещь")
+            async with SessionLocal() as s:
+                it=(await s.execute(select(Item).where(Item.id==iid))).scalar_one()
+                it.status=ItemStatus.PHOTOGRAPHED; await s.commit()
+            r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":50})
+            chk(r.status_code==422 and "выложенную" in r.text,
+                "невыложенная вещь -> отказ", f"{r.status_code} {r.text[:120]}")
+            async with SessionLocal() as s:
+                it=(await s.execute(select(Item).where(Item.id==iid))).scalar_one()
+                it.status=ItemStatus.LISTED; await s.commit()
+            r=await c.post(B, headers=h, json={"item_id":str(iid),"new_price":50})
+            chk(r.status_code==201, "выложенная -> проходит", str(r.status_code))
+
+            print("\n[10] Шаблон объявления")
+            from app.services import discounts as dsvc
+            from app.services.post_template import TemplateError
+            demo = dsvc.render_demo(dsvc.DEFAULT_TEMPLATE)
+            chk("−30%" in demo and "105" in demo, "встроенный шаблон рендерится", demo[:70])
+            ok_body = "💸 {title} теперь {new_price} {currency} вместо {old_price}"
+            try:
+                dsvc.validate_template(ok_body); chk(True, "корректный шаблон принят")
+            except TemplateError as e:
+                chk(False, "корректный шаблон принят", str(e))
+            for body, why in ((" ", "пустой"), ("{выдумка}", "чужой плейсхолдер"),
+                              ("<script>x</script>{title}", "запрещённый тег"),
+                              ("<b>{title}", "незакрытый тег")):
+                try:
+                    dsvc.validate_template(body); chk(False, f"отклоняет: {why}", "пропустил")
+                except TemplateError:
+                    chk(True, f"отклоняет: {why}")
+            async with SessionLocal() as s:
+                d=(await s.execute(select(Discount).where(Discount.store_id==sid)
+                                   .order_by(Discount.created_at.desc()))).scalars().first()
+                it=(await s.execute(select(Item).where(Item.id==iid))).scalar_one()
+            msg = dsvc.build_message(d, it, "Br", ok_body, "@shop")
+            chk("вместо" in msg and it.title in msg, "свой шаблон применяется", msg[:80])
+            msg2 = dsvc.build_message(d, it, "Br", None, "@shop")
+            chk("СКИДКА" in msg2, "без своего — встроенный", msg2[:60])
+
     finally:
         async with SessionLocal() as s:
             await s.execute(delete(Discount).where(Discount.store_id==sid))

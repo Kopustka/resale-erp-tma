@@ -63,6 +63,9 @@ const percent = computed(() =>
 /** Причина, по которой сохранять нельзя. null — можно. */
 const problem = computed<string | null>(() => {
   if (!target.value) return 'Выберите вещь'
+  // То же правило, что и в карточке: объявление уходит ответом на пост.
+  if (target.value.status !== 'LISTED')
+    return 'Скидку можно сделать только на выложенную вещь'
   if (oldPrice.value === null || oldPrice.value === undefined)
     return 'У вещи нет цены — сначала укажите её'
   if (newPrice.value === null) return 'Укажите цену со скидкой'
@@ -173,7 +176,9 @@ async function submit(): Promise<void> {
             <li v-for="f in found" :key="f.id">
               <button class="found-row tap" @click="pick(f)">
                 <span>{{ f.sku }} · {{ f.title || f.brand }}</span>
-                <span class="hint">{{ f.list_price ?? '—' }}</span>
+                <span class="hint">
+                  {{ f.status === 'LISTED' ? (f.list_price ?? '—') : 'не выложена' }}
+                </span>
               </button>
             </li>
           </ul>

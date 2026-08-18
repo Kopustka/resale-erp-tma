@@ -71,20 +71,86 @@ def _fmt(value: Decimal) -> str:
     return str(int(f)) if f == int(f) else f"{f:.2f}".rstrip("0").rstrip(".")
 
 
-def build_message(discount: Discount, title: str | None, symbol: str) -> str:
-    """Текст объявления. Уходит ответом на пост вещи."""
-    pct = percent_of(discount.old_price, discount.new_price)
-    head = f"🔥 <b>СКИДКА −{pct}%</b>" if pct > 0 else "🔥 <b>НОВАЯ ЦЕНА</b>"
-    lines = [head]
-    if title:
-        from .post_template import esc
+# Плейсхолдеры шаблона объявления. Свой набор, а не общий с постами:
+# у скидки речь про две цены и процент, остальных полей вещи тут нет.
+PLACEHOLDERS: list[dict[str, str]] = [
+    {"key": "title", "label": "Название вещи", "example": "Archive Nike Zip-up"},
+    {"key": "sku", "label": "Артикул", "example": "#1042"},
+    {"key": "old_price", "label": "Старая цена", "example": "150"},
+    {"key": "new_price", "label": "Новая цена", "example": "105"},
+    {"key": "percent", "label": "Процент скидки", "example": "30"},
+    {"key": "currency", "label": "Символ валюты", "example": "Br"},
+    {"key": "size", "label": "Размер", "example": "L"},
+    {"key": "signature", "label": "Подпись канала", "example": "Написать: @seller"},
+]
+VALID_KEYS = {p["key"] for p in PLACEHOLDERS}
 
-        lines.append(esc(title.strip()))
-    lines.append(
-        f"<s>{_fmt(discount.old_price)} {symbol}</s> → "
-        f"<b>{_fmt(discount.new_price)} {symbol}</b>"
-    )
-    return "\n".join(lines)
+DEFAULT_TEMPLATE = (
+    "🔥 <b>СКИДКА −{percent}%</b>\n"
+    "{title}\n"
+    "<s>{old_price} {currency}</s> → <b>{new_price} {currency}</b>"
+)
+
+
+def build_context(discount: Discount, item: Item | None, symbol: str) -> dict[str, str]:
+    """Значения плейсхолдеров. Всё уже HTML-экранировано."""
+    from .post_template import esc
+
+    pct = percent_of(discount.old_price, discount.new_price)
+    raw = {
+        "title": (item.title if item else "") or "",
+        "sku": (item.sku if item else "") or "",
+        "old_price": _fmt(discount.old_price),
+        "new_price": _fmt(discount.new_price),
+        # Пустой процент выбросит строку целиком — то же правило, что
+        # и у шаблонов постов.
+        "percent": str(pct) if pct > 0 else "",
+        "currency": symbol,
+        "size": (item.size if item else "") or "",
+        "signature": "",
+    }
+    return {k: esc(str(v).strip()) for k, v in raw.items()}
+
+
+def validate_template(body: str) -> None:
+    """Проверяет шаблон перед сохранением. Бросает TemplateError."""
+    from .post_template import _PLACEHOLDER_RE, TemplateError, validate_markup
+
+    if not body or not body.strip():
+        raise TemplateError("Шаблон пустой")
+    unknown = sorted({k for k in _PLACEHOLDER_RE.findall(body) if k not in VALID_KEYS})
+    if unknown:
+        raise TemplateError(
+            "Неизвестные плейсхолдеры: "
+            + ", ".join("{" + u + "}" for u in unknown)
+            + ". Доступны: " + ", ".join(sorted(VALID_KEYS))
+        )
+    validate_markup(body)
+    if not render_demo(body).strip():
+        raise TemplateError("На примере шаблон даёт пустой текст")
+
+
+def render_demo(body: str) -> str:
+    """Превью шаблона на примере — для настроек."""
+    from .post_template import render
+
+    return render(body, {p["key"]: p["example"] for p in PLACEHOLDERS})
+
+
+def build_message(
+    discount: Discount,
+    item: Item | None,
+    symbol: str,
+    template: str | None = None,
+    signature: str | None = None,
+) -> str:
+    """Текст объявления. Уходит ответом на пост вещи."""
+    from .post_template import esc, render
+
+    ctx = build_context(discount, item, symbol)
+    if signature:
+        ctx["signature"] = esc(signature.strip())
+    return render(template or DEFAULT_TEMPLATE, ctx)
 
 
 async def enqueue_announcements(

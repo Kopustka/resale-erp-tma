@@ -112,6 +112,8 @@ class Store(Base):
     subscriptions_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Автоответы на типовые вопросы в комментариях под постом.
     auto_reply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Шаблон объявления о скидке. NULL — встроенный.
+    discount_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
