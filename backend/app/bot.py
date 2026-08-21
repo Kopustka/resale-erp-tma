@@ -28,6 +28,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import (
     Channel,
+    ItemStatus,
     Subscription,
     InviteStatus,
     Item,
@@ -53,7 +54,8 @@ from .services import (
     voice_capture,
 )
 from .services.ai_describe import AiGenerationError, AiNotConfigured
-from .services.fsm import SOLD_STATUSES
+from .repositories.items import ItemRepository
+from .services.fsm import SOLD_STATUSES, prev_status
 
 settings = get_settings()
 bot = Bot(token=settings.bot_token)
@@ -446,10 +448,31 @@ async def on_preview_decision(cq: CallbackQuery):
         new_status = JobStatus.PENDING if action == preview.APPROVE else JobStatus.CANCELLED
         for job in jobs:
             job.status = new_status
+
+        reverted = False
+        if action != preview.APPROVE:
+            # Публикацию отклонили — значит вещь не выставлена. Раньше она
+            # оставалась в «Выложен» без поста в канале: состояние
+            # расходилось, и повторное выставление молча пропускалось
+            # защитой от дублей.
+            item = (
+                await s.execute(select(Item).where(Item.id == item_id))
+            ).scalar_one_or_none()
+            if item is not None and item.status == ItemStatus.LISTED:
+                back = prev_status(ItemStatus.LISTED)
+                if back is not None:
+                    repo = ItemRepository(s)
+                    reverted = await repo.apply_status(
+                        item, back, expected_version=item.version, changed_by=user.id
+                    )
         await s.commit()
 
-    note = ("✅ Отправляю в канал…" if action == preview.APPROVE
-            else "✖️ Публикация отменена")
+    note = (
+        "✅ Отправляю в канал…"
+        if action == preview.APPROVE
+        else ("✖️ Публикация отменена, вещь вернулась в «Сфотографирован»"
+              if reverted else "✖️ Публикация отменена")
+    )
     await cq.answer(note)
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=None)

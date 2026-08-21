@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { itemsApi } from '@/shared/api/endpoints'
-import { ApiError } from '@/shared/api/http'
 import type {
   Currency,
   ItemCreate,
@@ -17,14 +16,15 @@ import { useToastStore } from './toast'
 const PAGE_LIMIT = 30
 const UNDO_MS = 5000
 
+/** Цепочка запросов по каждой вещи: следующий стартует после предыдущего. */
+const chain = new Map<string, Promise<boolean>>()
+
 /**
- * Запросы смены статуса, которые сейчас в полёте, по вещам.
- *
- * Раньше здесь был Set и второй свайп молча отбрасывался — пользователь
- * видел, что жест не сработал. Теперь ждём предыдущий и продолжаем с
- * актуального статуса: двойной свайп честно продвигает на два шага.
+ * Сколько шагов по вещи ещё не подтверждено сервером. Нужен, чтобы ответ
+ * на первый свайп не затёр статус, который пользователь уже насвайпал
+ * дальше.
  */
-const inFlight = new Map<string, Promise<unknown>>()
+const pendingSteps = new Map<string, number>()
 
 /** Не чаще одной тихой пересинхронизации в 3 секунды. */
 const REFRESH_THROTTLE_MS = 3000
@@ -150,106 +150,108 @@ export const useItemsStore = defineStore('items', {
      * Мгновенно меняем в сторе, PATCH с Idempotency-Key + version.
      * При ошибке/409 — откат к прежнему состоянию и Toast; при 409 перезагружаем айтем.
      */
+    /**
+     * Меняет статус. Отрисовка мгновенная, сеть — отдельно.
+     *
+     * Раньше запрос ждали до показа результата, и быстрые свайпы выглядели
+     * так, будто не сработали. Теперь статус меняется в списке сразу, а
+     * запросы уходят строго по очереди на вещь: каждый следующий берёт
+     * версию, которую вернул предыдущий, иначе сервер ответит 409.
+     */
     async applyStatus(item: ItemOut, opts: ApplyStatusOptions = {}): Promise<boolean> {
       const toast = useToastStore()
-
-      // Ждём предыдущую смену по этой же вещи, иначе уйдём со старой
-      // версией и получим 409 на ровном месте.
-      const pending = inFlight.get(item.id)
-      if (pending) await pending.catch(() => undefined)
-
       const idx = this.items.findIndex((i) => i.id === item.id)
       if (idx === -1) return false
       const current = this.items[idx]
 
-      // Статус мог уйти вперёд, пока ждали, — цель считаем от свежего.
+      // Цель считаем от локального статуса: он уже включает предыдущие
+      // свайпы, ответ по которым ещё не пришёл.
       const target = opts.targetStatus ?? nextStatus(current.status)
       if (!target) {
         toast.show({ message: 'Нет следующего статуса', kind: 'info' })
         return false
       }
 
-      const snapshot = {
-        status: current.status,
-        version: current.version,
-        selling_price: current.selling_price,
-        sold_date: current.sold_date,
-      }
-
-      // Оптимистика.
+      // 1. Показываем сразу, до всякой сети.
       current.status = target
       if (opts.sellingPrice !== undefined) current.selling_price = opts.sellingPrice
+      pendingSteps.set(item.id, (pendingSteps.get(item.id) ?? 0) + 1)
 
-      let release: () => void = () => undefined
-      inFlight.set(item.id, new Promise<void>((r) => (release = r)))
+      // 2. Запросы — цепочкой, чтобы версии не разъехались.
+      const prev = chain.get(item.id) ?? Promise.resolve(true)
+      const run = prev.then(() => this.sendStatus(item.id, target, opts))
+      chain.set(
+        item.id,
+        run.catch(() => false),
+      )
+      return run
+    },
+
+    /** Один шаг цепочки: отправка и сверка с ответом сервера. */
+    async sendStatus(
+      id: string,
+      target: ItemStatus,
+      opts: ApplyStatusOptions,
+    ): Promise<boolean> {
+      const toast = useToastStore()
+      const at = this.items.findIndex((i) => i.id === id)
+      if (at === -1) {
+        pendingSteps.delete(id)
+        return false
+      }
+
       try {
-        const send = (version: number, key: string) =>
-          itemsApi.patchStatus(
-            item.id,
-            {
-              target_status: target,
-              version,
-              selling_price: opts.sellingPrice,
-              selling_currency: opts.sellingCurrency,
-            },
-            key,
-          )
-
-        let fresh: ItemOut
-        try {
-          fresh = await send(snapshot.version, uuid())
-        } catch (e) {
-          // Версия устарела (правку сделали в карточке или в другой вкладке).
-          // Это не повод терять действие пользователя: перечитываем вещь и
-          // повторяем один раз с актуальной версией.
-          if (!(e instanceof ApiError && e.isConflict)) throw e
-          const actual = await itemsApi.get(item.id)
-          if (actual.status === target) {
-            const at = this.items.findIndex((i) => i.id === item.id)
-            if (at !== -1) this.items.splice(at, 1, actual)
-            return true  // кто-то уже перевёл в нужный статус — цель достигнута
-          }
-          fresh = await send(actual.version, uuid())
-        }
-
-        // Заменяем на серверную версию (актуальные version, net_profit, roi и т.д.).
-        const at = this.items.findIndex((i) => i.id === item.id)
-        if (at !== -1) this.items.splice(at, 1, fresh)
+        const fresh = await itemsApi.patchStatus(
+          id,
+          {
+            target_status: target,
+            // Версия актуальная: предыдущий шаг цепочки её обновил.
+            version: this.items[at].version,
+            selling_price: opts.sellingPrice,
+            selling_currency: opts.sellingCurrency,
+          },
+          uuid(),
+        )
+        this.mergeFresh(id, fresh)
         return true
       } catch (e) {
-        // Откат.
-        const at = this.items.findIndex((i) => i.id === item.id)
-        if (at !== -1) {
-          const it = this.items[at]
-          it.status = snapshot.status
-          it.version = snapshot.version
-          it.selling_price = snapshot.selling_price
-          it.sold_date = snapshot.sold_date
-        }
-
-        // Сообщение сервера точнее любого локального: там и про цену,
-        // и про недопустимый переход.
-        if (e instanceof ApiError && e.isConflict) {
-          toast.error('Данные разошлись — обновил карточку, повторите')
-          await this.reloadItem(item.id)
-        } else {
-          toast.error(e instanceof Error ? e.message : 'Не удалось сменить статус')
-        }
+        // Сверяемся с сервером, а не откатываемся на локальный снимок: он
+        // мог устареть, и список расходился с действительностью — вещь
+        // показывалась в одном статусе, а на сервере была в другом.
+        await this.reloadItem(id)
+        chain.delete(id)
+        pendingSteps.delete(id)
+        toast.error(e instanceof Error ? e.message : 'Не удалось сменить статус')
         return false
       } finally {
-        inFlight.delete(item.id)
-        release()
+        const left = (pendingSteps.get(id) ?? 1) - 1
+        if (left > 0) pendingSteps.set(id, left)
+        else pendingSteps.delete(id)
       }
     },
 
     /**
-     * Тихая пересинхронизация первой страницы: обновляет уже показанные
-     * карточки на месте, не сбрасывая прокрутку. Если состав изменился
-     * (появились или исчезли вещи) — перезагружает список целиком.
+     * Кладёт ответ сервера в список, не затирая более свежие свайпы.
      *
-     * Нужна при возврате в мини-апп: пока пользователь был в чате с ботом
-     * (подтверждал предпросмотр, отвечал в комментариях), данные могли уйти
-     * вперёд, и раньше это лечилось только перезагрузкой страницы.
+     * Пока в очереди есть неотправленные шаги, локальный статус новее
+     * ответа: если подставить ответ целиком, карточка прыгнет назад.
+     */
+    mergeFresh(id: string, fresh: ItemOut): void {
+      const at = this.items.findIndex((i) => i.id === id)
+      if (at === -1) return
+      const local = this.items[at]
+      const stillPending = (pendingSteps.get(id) ?? 0) > 1
+      this.items.splice(at, 1, {
+        ...fresh,
+        status: stillPending ? local.status : fresh.status,
+        selling_price: stillPending ? local.selling_price : fresh.selling_price,
+      })
+    },
+
+    /**
+     * Тихая пересинхронизация первой страницы: обновляет уже показанные
+     * карточки на месте, не сбрасывая прокрутку. Если состав изменился —
+     * перезагружает список целиком.
      */
     async refresh(): Promise<void> {
       if (this.loading) return
@@ -263,12 +265,14 @@ export const useItemsStore = defineStore('items', {
           ...this.filters,
         })
         const known = new Set(this.items.map((i) => i.id))
-        const headChanged = page.items.some((i) => !known.has(i.id))
-        if (headChanged) {
+        if (page.items.some((i) => !known.has(i.id))) {
           await this.loadFirst()
           return
         }
+        // Вещи с неподтверждёнными свайпами не трогаем: ответ сервера по
+        // ним ещё в пути, и подстановка списка вернула бы старый статус.
         for (const fresh of page.items) {
+          if (pendingSteps.has(fresh.id)) continue
           const at = this.items.findIndex((i) => i.id === fresh.id)
           if (at !== -1) this.items.splice(at, 1, fresh)
         }
