@@ -8,6 +8,7 @@ import { closeOverlay, setTab } from '@/app/navigation'
 import { hapticImpact, hapticNotify, openTelegramLink } from '@/shared/telegram/webapp'
 import type { ItemCreate } from '@/shared/api/types'
 import { itemsApi, mediaApi } from '@/shared/api/endpoints'
+import { downscaleForUpload } from '@/shared/utils/image'
 import { CURRENCIES, type Currency } from '@/shared/api/types'
 import type { VoiceParseResult } from '@/shared/api/types'
 
@@ -64,7 +65,11 @@ async function onFilesSelected(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = '' // сброс, чтобы можно было выбрать тот же файл повторно
-  for (const file of files) {
+  if (!files.length) return
+
+  // Превью показываем сразу, до отправки: пользователь видит, что фото
+  // приняты, и не жмёт кнопку повторно.
+  const entries = files.map((file) => {
     photos.value.push({
       id: null,
       preview: URL.createObjectURL(file),
@@ -72,16 +77,47 @@ async function onFilesSelected(e: Event): Promise<void> {
       error: false,
     })
     // берём реактивный прокси из массива (мутировать исходный объект нельзя)
-    const entry = photos.value[photos.value.length - 1]
-    try {
-      const { photo_id } = await mediaApi.upload(file)
-      entry.id = photo_id
-    } catch (err) {
-      entry.error = true
-      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить фото')
-    } finally {
-      entry.uploading = false
+    return { file, entry: photos.value[photos.value.length - 1] }
+  })
+
+  let saved = 0
+  let sentBytes = 0
+  let originalBytes = 0
+
+  // Параллельно: раньше снимки уходили строго по очереди, и четыре фото
+  // складывались в четыре последовательных выгрузки. Ограничение в три
+  // потока — чтобы не забить мобильный канал целиком.
+  const queue = [...entries]
+  async function worker(): Promise<void> {
+    for (;;) {
+      const next = queue.shift()
+      if (!next) return
+      const { file, entry } = next
+      try {
+        // Уменьшаем в браузере: телефон отдаёт 2–4 МБ на кадр, и это
+        // главная причина долгого добавления, а не работа сервера.
+        const small = await downscaleForUpload(file)
+        originalBytes += small.originalBytes
+        sentBytes += small.bytes
+        const { photo_id } = await mediaApi.upload(small.file)
+        entry.id = photo_id
+        saved += 1
+      } catch (err) {
+        entry.error = true
+        toast.error(err instanceof Error ? err.message : 'Не удалось загрузить фото')
+      } finally {
+        entry.uploading = false
+      }
     }
+  }
+  await Promise.all([worker(), worker(), worker()])
+
+  if (saved && originalBytes > sentBytes * 1.5) {
+    const mb = (n: number) => (n / 1024 / 1024).toFixed(1)
+    toast.show({
+      message: `Фото сжаты: ${mb(originalBytes)} → ${mb(sentBytes)} МБ`,
+      kind: 'info',
+    })
   }
 }
 

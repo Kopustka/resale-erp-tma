@@ -117,12 +117,28 @@ async def lifespan(app: FastAPI):
         for stmt in _ENSURE_ENUM_VALUES:
             await auto.execute(text(stmt))
 
+    # Прогреваем курсы валют: первая конвертация при холодном кэше стоит
+    # ~250 мс на запрос к Нацбанку, и этот всплеск ловил живой пользователь
+    # каждые шесть часов — при создании вещи или отправке.
+    async def _warm_fx() -> None:
+        from decimal import Decimal
+
+        from .services import fx
+
+        try:
+            await fx.convert(Decimal("1"), "USD", "BYN")
+            log.info("курсы валют прогреты")
+        except Exception as e:  # noqa: BLE001
+            log.warning("не удалось прогреть курсы: %s", e)
+
     from .services.post_worker import run_forever
 
+    warmup = asyncio.create_task(_warm_fx(), name="fx-warmup")
     worker = asyncio.create_task(run_forever(), name="post-queue")
     try:
         yield
     finally:
+        warmup.cancel()
         worker.cancel()
         with suppress(asyncio.CancelledError):
             await worker

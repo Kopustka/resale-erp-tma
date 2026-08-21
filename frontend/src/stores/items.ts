@@ -18,11 +18,13 @@ const PAGE_LIMIT = 30
 const UNDO_MS = 5000
 
 /**
- * Вещи, по которым смена статуса уже в полёте. Без этого второй свайп
- * уходил со старой версией (ответ ещё не пришёл, локальная не обновилась)
- * и сервер отвечал 409 — визуально это выглядело как «ничего не произошло».
+ * Запросы смены статуса, которые сейчас в полёте, по вещам.
+ *
+ * Раньше здесь был Set и второй свайп молча отбрасывался — пользователь
+ * видел, что жест не сработал. Теперь ждём предыдущий и продолжаем с
+ * актуального статуса: двойной свайп честно продвигает на два шага.
  */
-const inFlight = new Set<string>()
+const inFlight = new Map<string, Promise<unknown>>()
 
 /** Не чаще одной тихой пересинхронизации в 3 секунды. */
 const REFRESH_THROTTLE_MS = 3000
@@ -150,17 +152,22 @@ export const useItemsStore = defineStore('items', {
      */
     async applyStatus(item: ItemOut, opts: ApplyStatusOptions = {}): Promise<boolean> {
       const toast = useToastStore()
-      const target = opts.targetStatus ?? nextStatus(item.status)
-      if (!target) {
-        toast.show({ message: 'Нет следующего статуса', kind: 'info' })
-        return false
-      }
 
-      if (inFlight.has(item.id)) return false  // второй свайп до ответа — глушим
+      // Ждём предыдущую смену по этой же вещи, иначе уйдём со старой
+      // версией и получим 409 на ровном месте.
+      const pending = inFlight.get(item.id)
+      if (pending) await pending.catch(() => undefined)
 
       const idx = this.items.findIndex((i) => i.id === item.id)
       if (idx === -1) return false
       const current = this.items[idx]
+
+      // Статус мог уйти вперёд, пока ждали, — цель считаем от свежего.
+      const target = opts.targetStatus ?? nextStatus(current.status)
+      if (!target) {
+        toast.show({ message: 'Нет следующего статуса', kind: 'info' })
+        return false
+      }
 
       const snapshot = {
         status: current.status,
@@ -173,7 +180,8 @@ export const useItemsStore = defineStore('items', {
       current.status = target
       if (opts.sellingPrice !== undefined) current.selling_price = opts.sellingPrice
 
-      inFlight.add(item.id)
+      let release: () => void = () => undefined
+      inFlight.set(item.id, new Promise<void>((r) => (release = r)))
       try {
         const send = (version: number, key: string) =>
           itemsApi.patchStatus(
@@ -230,6 +238,7 @@ export const useItemsStore = defineStore('items', {
         return false
       } finally {
         inFlight.delete(item.id)
+        release()
       }
     },
 

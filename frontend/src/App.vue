@@ -1,22 +1,64 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { nav } from '@/app/navigation'
+import type { Tab } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import BottomNav from '@/components/BottomNav.vue'
 import ToastHost from '@/shared/ui/ToastHost.vue'
 import InventoryScreen from '@/screens/InventoryScreen.vue'
 import BiScreen from '@/screens/BiScreen.vue'
 import SettingsScreen from '@/screens/SettingsScreen.vue'
-import CreateScreen from '@/screens/CreateScreen.vue'
-import ItemDetail from '@/screens/ItemDetail.vue'
-import TemplatesScreen from '@/screens/TemplatesScreen.vue'
-import ChannelsScreen from '@/screens/ChannelsScreen.vue'
-import CalendarScreen from '@/screens/CalendarScreen.vue'
+
+/*
+ * Оверлеи грузим по требованию. Раньше вся пятёрка попадала в стартовый
+ * бандл, хотя открывается по одному и не сразу: карточка, создание,
+ * шаблоны, каналы, контент-план. Их код тянулся при каждом запуске
+ * мини-аппа — а это первое, что видит клиент.
+ */
+const CreateScreen = defineAsyncComponent(() => import('@/screens/CreateScreen.vue'))
+const ItemDetail = defineAsyncComponent(() => import('@/screens/ItemDetail.vue'))
+const TemplatesScreen = defineAsyncComponent(() => import('@/screens/TemplatesScreen.vue'))
+const ChannelsScreen = defineAsyncComponent(() => import('@/screens/ChannelsScreen.vue'))
+const CalendarScreen = defineAsyncComponent(() => import('@/screens/CalendarScreen.vue'))
+
 
 const session = useSessionStore()
 
+/**
+ * Вкладки, которые пользователь уже открывал. Пока вкладку не трогали,
+ * её компонент не смонтирован и данные не запрашиваются.
+ */
+const seen = ref(new Set<Tab>(['inventory']))
+watch(
+  () => nav.activeTab,
+  (tab) => {
+    if (!seen.value.has(tab)) seen.value = new Set(seen.value).add(tab)
+  },
+  { immediate: true },
+)
+
+/**
+ * Подтягиваем чанки оверлеев в простое, после первой отрисовки. Так старт
+ * остаётся лёгким, но к моменту, когда пользователь откроет карточку, код
+ * уже в кэше — открытие мгновенное, без подгрузки по тапу.
+ */
+function prefetchOverlays(): void {
+  const load = () => {
+    void import('@/screens/ItemDetail.vue')
+    void import('@/screens/CreateScreen.vue')
+    void import('@/screens/TemplatesScreen.vue')
+    void import('@/screens/ChannelsScreen.vue')
+    void import('@/screens/CalendarScreen.vue')
+  }
+  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => void })
+    .requestIdleCallback
+  if (idle) idle(load)
+  else window.setTimeout(load, 1500)
+}
+
 onMounted(() => {
   void session.init()
+  prefetchOverlays()
 })
 </script>
 
@@ -38,8 +80,16 @@ onMounted(() => {
     <template v-else-if="session.ready">
       <main class="viewport">
         <InventoryScreen v-show="nav.activeTab === 'inventory'" />
-        <BiScreen v-show="nav.activeTab === 'bi' && session.canSeeFinance" />
-        <SettingsScreen v-show="nav.activeTab === 'settings'" />
+        <!--
+          Вкладки монтируем при первом заходе, дальше держим через v-show.
+          Раньше все три монтировались сразу, и настройки с аналитикой на
+          старте тянули шесть лишних запросов до того, как показался склад.
+        -->
+        <BiScreen
+          v-if="seen.has('bi') && session.canSeeFinance"
+          v-show="nav.activeTab === 'bi'"
+        />
+        <SettingsScreen v-if="seen.has('settings')" v-show="nav.activeTab === 'settings'" />
       </main>
 
       <BottomNav />
