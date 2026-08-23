@@ -40,6 +40,17 @@ const next = computed(() => nextStatus(props.item.status))
 const nextLabel = computed(() => (next.value ? STATUS_LABELS[next.value] : ''))
 const showStep = computed(() => props.actionable && next.value !== null)
 
+/**
+ * Бренд у вещи может быть не заполнен, и шаблон «бренд · категория · размер»
+ * начинался с висящей точки: « · Лонгслив · S». Собираем из непустых частей.
+ */
+const subtitle = computed(() =>
+  [props.item.brand, props.item.category, props.item.size]
+    .map((x) => (x ?? '').trim())
+    .filter(Boolean)
+    .join(' · '),
+)
+
 // Цена показывается в базовой валюте склада (сведённая):
 // продано -> фактическая продажа; иначе -> цена объявления или себестоимость.
 const priceValue = computed<number | null | undefined>(() =>
@@ -84,9 +95,7 @@ function onStep(e: Event): void {
       <div v-if="generating" class="title-line gen-shimmer">✨ Генерирую название…</div>
       <div v-else class="title-line">{{ item.title }}</div>
       <div v-if="generating" class="cat gen-shimmer gen-small">описание пишется по фото</div>
-      <div v-else class="cat hint">
-        {{ item.brand }} · {{ item.category }}<span v-if="item.size"> · {{ item.size }}</span>
-      </div>
+      <div v-else class="cat hint">{{ subtitle }}</div>
 
       <div class="bottom-row">
         <button
@@ -111,12 +120,17 @@ function onStep(e: Event): void {
 
 <style scoped>
 /*
- * Строка — серая плашка на светлом фоне, как блоки в настройках и админке.
- * Раньше фон карточки совпадал с фоном экрана, и список читался сплошным
- * полотном: границы строк были видны только по вертикальным зазорам.
+ * Строка — серая плашка, как блоки в настройках и админке. Раньше фон
+ * карточки совпадал с фоном экрана, и список читался сплошным полотном.
  *
- * Высота ровно 112px — на неё завязан ROW_HEIGHT виртуального списка в
- * InventoryScreen. Меняя её, поправьте и там, иначе поедет прокрутка.
+ * Высота карточки фиксирована: её знает ROW_HEIGHT виртуального списка в
+ * InventoryScreen (карточка + зазор строки). Поэтому высота КАЖДОЙ строки
+ * внутри задана явно, а сами строки не сжимаются (flex: none).
+ *
+ * Без этого вёрстка держалась на метриках шрифта: в макете на Linux всё
+ * помещалось, а на iPhone с SF Pro строки оказались выше, сумма превысила
+ * доступную высоту, и flex сжал текст — название обрезалось сверху и снизу
+ * и наезжало на категорию.
  */
 .card {
   position: relative;
@@ -125,14 +139,14 @@ function onStep(e: Event): void {
   padding: 12px 10px;
   border-radius: var(--radius);
   background: var(--tg-theme-secondary-bg-color);
-  height: 112px;
+  height: 120px;
   user-select: none;
   -webkit-user-select: none;
 }
 .photo {
   flex: none;
   width: 80px;
-  height: 88px;
+  height: 96px; /* вся высота содержимого: 120 − 2×12 */
   pointer-events: none;
 }
 .body {
@@ -141,8 +155,11 @@ function onStep(e: Event): void {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  overflow: hidden;
 }
 .row-top {
+  flex: none;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -155,7 +172,10 @@ function onStep(e: Event): void {
   font-weight: 600;
 }
 .title-line {
+  flex: none;
+  height: 20px;
   font-size: 16px;
+  line-height: 20px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -163,7 +183,10 @@ function onStep(e: Event): void {
   pointer-events: none;
 }
 .cat {
+  flex: none;
+  height: 16px;
   font-size: 13px;
+  line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -171,7 +194,9 @@ function onStep(e: Event): void {
 }
 
 .bottom-row {
-  margin-top: auto;
+  flex: none;
+  height: 22px;
+  margin-top: auto; /* остаток высоты уходит сюда, а не в сжатие текста */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -181,8 +206,6 @@ function onStep(e: Event): void {
 /*
  * Повторяет геометрию StatusBadge (шрифт, скругление, отступы, заливка),
  * чтобы бейдж статуса и кнопка перехода выглядели одной парой.
- * Отрицательный вертикальный margin возвращает площадь нажатия, не раздвигая
- * строку: карточка фиксированной высоты, её считает виртуальный список.
  */
 .step {
   /* Сжимается первой: на узком экране обрезать название статуса не жалко,
@@ -194,7 +217,6 @@ function onStep(e: Event): void {
   align-items: center;
   gap: 5px;
   padding: 4px 8px;
-  margin: -4px 0;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
@@ -224,6 +246,7 @@ function onStep(e: Event): void {
 .price-row {
   flex: none;
   font-size: 16px;
+  line-height: 20px;
   pointer-events: none;
 }
 /* Индикатор фоновой AI-генерации: мягкое «дыхание» текста. */
