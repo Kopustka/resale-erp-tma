@@ -2,6 +2,7 @@
 import { http, uploadFile } from './http'
 import type {
   ActivityPage,
+  AdminScope,
   AiDescribeResult,
   AnalyticsSummary,
   CaptureSession,
@@ -24,6 +25,7 @@ import type {
   ItemUpdate,
   MemberOut,
   PostTemplate,
+  OversightOut,
   Role,
   TeamOverview,
   StatusPatch,
@@ -230,6 +232,7 @@ export function mediaPath(itemId: string, index: number, width?: number): string
 /** Доступно только владельцу склада; остальным сервер отвечает 403. */
 export const adminApi = {
   activity: (p: {
+    storeId?: string | null
     userId?: string | null
     group?: string | null
     days?: number
@@ -237,11 +240,22 @@ export const adminApi = {
     offset?: number
   }) =>
     http.get<ActivityPage>(`${V1}/admin/activity`, {
+      store_id: p.storeId ?? undefined,
       user_id: p.userId ?? undefined,
       group: p.group ?? undefined,
       days: p.days ?? undefined,
       limit: p.limit ?? undefined,
       offset: p.offset || undefined,
     }),
-  team: (days = 30) => http.get<TeamOverview>(`${V1}/admin/team`, { days }),
+  team: (days = 30, storeId?: string | null) =>
+    http.get<TeamOverview>(`${V1}/admin/team`, {
+      days,
+      store_id: storeId ?? undefined,
+    }),
+  /** Склады, доступные в панели: свои + открытые по надзору. */
+  scopes: () => http.get<AdminScope[]>(`${V1}/admin/scopes`),
+  oversight: () => http.get<OversightOut[]>(`${V1}/admin/oversight`),
+  requestOversight: (username: string) =>
+    http.post<OversightOut>(`${V1}/admin/oversight`, { username }),
+  dropOversight: (id: string) => http.del<void>(`${V1}/admin/oversight/${id}`),
 }

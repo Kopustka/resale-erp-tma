@@ -17,6 +17,7 @@ from app.models import (AuditLog, Discount, DiscountStatus, InviteStatus, Item,
                         ItemStatus, ItemStatusLog, Role, Store, StoreCounter,
                         StoreInvite, StoreMember, User)
 from app.routers import admin
+from app.routers.admin import Scope
 from app.services import audit
 
 TG_OWNER, TG_EMP, TG_ANA = 999911, 999912, 999913
@@ -85,6 +86,7 @@ async def main():
         uid_owner, uid_emp = users[TG_OWNER].id, users[TG_EMP].id
         m_owner, m_emp, m_ana = members[TG_OWNER], members[TG_EMP], members[TG_ANA]
 
+    other_id = None
     try:
         print("\n[1] Доступ только у владельца")
         dep = require_role(*OWNER_ONLY)
@@ -99,7 +101,7 @@ async def main():
 
         print("\n[2] Лента: журнал + статусы в одном потоке")
         async with SessionLocal() as s:
-            page = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            page = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                         days=30, limit=50, offset=0)
         acts = [e.action for e in page.events]
         chk(len(page.events) == 5, "5 событий (2 журнал + 3 статуса)", str(acts))
@@ -120,9 +122,9 @@ async def main():
 
         print("\n[4] Фильтр по участнику")
         async with SessionLocal() as s:
-            only_emp = await admin.activity(member=m_owner, session=s, user_id=uid_emp,
+            only_emp = await admin.activity(scope=Scope(sid, True), session=s, user_id=uid_emp,
                                             group=None, days=30, limit=50, offset=0)
-            only_own = await admin.activity(member=m_owner, session=s, user_id=uid_owner,
+            only_own = await admin.activity(scope=Scope(sid, True), session=s, user_id=uid_owner,
                                             group=None, days=30, limit=50, offset=0)
         chk(len(only_emp.events) == 4, "у сотрудника 4 события", str(len(only_emp.events)))
         chk(all(e.actor.user_id == uid_emp for e in only_emp.events), "чужого не подмешалось")
@@ -130,11 +132,11 @@ async def main():
 
         print("\n[5] Фильтр по группе")
         async with SessionLocal() as s:
-            g_status = await admin.activity(member=m_owner, session=s, user_id=None,
+            g_status = await admin.activity(scope=Scope(sid, True), session=s, user_id=None,
                                             group="status", days=30, limit=50, offset=0)
-            g_items = await admin.activity(member=m_owner, session=s, user_id=None,
+            g_items = await admin.activity(scope=Scope(sid, True), session=s, user_id=None,
                                            group="items", days=30, limit=50, offset=0)
-            g_set = await admin.activity(member=m_owner, session=s, user_id=None,
+            g_set = await admin.activity(scope=Scope(sid, True), session=s, user_id=None,
                                          group="settings", days=30, limit=50, offset=0)
         chk(len(g_status.events) == 3 and {e.action for e in g_status.events} == {"status"},
             "«Статусы» отдают только статусы", str(len(g_status.events)))
@@ -145,11 +147,11 @@ async def main():
 
         print("\n[6] Постраничность")
         async with SessionLocal() as s:
-            p1 = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            p1 = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                       days=30, limit=2, offset=0)
-            p2 = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            p2 = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                       days=30, limit=2, offset=2)
-            p3 = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            p3 = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                       days=30, limit=2, offset=4)
         chk(len(p1.events) == 2 and p1.has_more, "первая страница + есть ещё")
         chk(len(p3.events) == 1 and not p3.has_more, "последняя страница без продолжения",
@@ -165,16 +167,16 @@ async def main():
             await s.commit()
             old_id = old.id
         async with SessionLocal() as s:
-            recent = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            recent = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                           days=30, limit=50, offset=0)
-            far = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            far = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                        days=180, limit=50, offset=0)
         chk(len(recent.events) == 5, "за 30 дней старое не видно", str(len(recent.events)))
         chk(len(far.events) == 6, "за 180 дней видно", str(len(far.events)))
 
         print("\n[8] Сводка по команде")
         async with SessionLocal() as s:
-            ov = await admin.team(member=m_owner, session=s, days=30)
+            ov = await admin.team(scope=Scope(sid, True), session=s, days=30)
         by_user = {m.username: m for m in ov.members}
         chk(len(ov.members) == 3, "все три участника в сводке", str(list(by_user)))
         chk(ov.members[0].role == Role.OWNER, "владелец первым в списке")
@@ -202,9 +204,9 @@ async def main():
                          action=audit.ITEM_CREATE, summary="чужая вещь")
             await s.commit()
             other_id = other.id
-            foreign = await admin.activity(member=other_m, session=s, user_id=None, group=None,
+            foreign = await admin.activity(scope=Scope(other.id, True), session=s, user_id=None, group=None,
                                            days=30, limit=50, offset=0)
-            mine = await admin.activity(member=m_owner, session=s, user_id=None, group=None,
+            mine = await admin.activity(scope=Scope(sid, True), session=s, user_id=None, group=None,
                                         days=30, limit=50, offset=0)
         chk(len(foreign.events) == 1, "во втором складе только его событие",
             str(len(foreign.events)))
@@ -223,19 +225,19 @@ async def main():
             "неизвестный код не теряется")
     finally:
         async with SessionLocal() as s:
-            await s.execute(delete(AuditLog).where(AuditLog.store_id.in_([sid, other_id])))
+            await s.execute(delete(AuditLog).where(AuditLog.store_id.in_([x for x in (sid, other_id) if x])))
             await s.execute(delete(StoreInvite).where(StoreInvite.store_id == sid))
             await s.execute(delete(Discount).where(Discount.store_id == sid))
             items = (await s.execute(select(Item.id).where(Item.store_id == sid))).scalars().all()
             await s.execute(delete(ItemStatusLog).where(ItemStatusLog.item_id.in_(items)))
             await s.execute(delete(Item).where(Item.store_id == sid))
             await s.execute(delete(StoreCounter).where(StoreCounter.store_id == sid))
-            await s.execute(delete(StoreMember).where(StoreMember.store_id.in_([sid, other_id])))
+            await s.execute(delete(StoreMember).where(StoreMember.store_id.in_([x for x in (sid, other_id) if x])))
             for tg in (TG_OWNER, TG_EMP, TG_ANA):
                 u = (await s.execute(select(User).where(User.telegram_id == tg))).scalar_one()
                 u.current_store_id = None
             await s.flush()
-            await s.execute(delete(Store).where(Store.id.in_([sid, other_id])))
+            await s.execute(delete(Store).where(Store.id.in_([x for x in (sid, other_id) if x])))
             await s.execute(delete(User).where(User.telegram_id.in_([TG_OWNER, TG_EMP, TG_ANA])))
             await s.commit()
         print("\n[cleanup] ok")

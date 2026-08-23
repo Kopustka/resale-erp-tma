@@ -15,13 +15,37 @@ import { ApiError } from '@/shared/api/http'
 import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
 import { hapticImpact, hapticSelection } from '@/shared/telegram/webapp'
-import type { ActivityEvent, MemberStats, PendingInvite, Role } from '@/shared/api/types'
+import type {
+  ActivityEvent,
+  AdminScope,
+  MemberStats,
+  OversightOut,
+  PendingInvite,
+  Role,
+} from '@/shared/api/types'
 
 const session = useSessionStore()
 const toast = useToastStore()
 
 type Pane = 'feed' | 'team'
 const pane = ref<Pane>('feed')
+
+/**
+ * Панель показывает не только свой склад: владелец другого склада мог
+ * открыть свою ленту по запросу. Выбранный склад участвует в каждом
+ * запросе — сервер по нему же и проверяет право на просмотр.
+ */
+const scopes = ref<AdminScope[]>([])
+const scopeId = ref<string | null>(null)
+const currentScope = computed(
+  () => scopes.value.find((s) => s.store_id === scopeId.value) ?? null,
+)
+const isOwnScope = computed(() => currentScope.value?.kind !== 'watch')
+
+const watchList = ref<OversightOut[]>([])
+const watchOpen = ref(false)
+const watchName = ref('')
+const watchBusy = ref(false)
 
 const PERIODS = [
   { days: 7, label: '7 дней' },
@@ -113,11 +137,32 @@ const filterName = computed(() => {
   return m ? who(m) : null
 })
 
+async function loadScopes(): Promise<void> {
+  try {
+    scopes.value = await adminApi.scopes()
+    if (!scopeId.value && scopes.value.length) {
+      const own = scopes.value.find((s) => s.kind === 'own')
+      scopeId.value = (own ?? scopes.value[0]).store_id
+    }
+  } catch {
+    // Не критично: без списка панель работает по активному складу.
+  }
+}
+
+async function loadWatchList(): Promise<void> {
+  try {
+    watchList.value = await adminApi.oversight()
+  } catch {
+    watchList.value = []
+  }
+}
+
 async function loadFeed(): Promise<void> {
   feedLoading.value = true
   feedError.value = null
   try {
     const page = await adminApi.activity({
+      storeId: scopeId.value,
       userId: actorId.value,
       group: group.value,
       days: days.value,
@@ -138,6 +183,7 @@ async function loadMore(): Promise<void> {
   feedMore.value = true
   try {
     const page = await adminApi.activity({
+      storeId: scopeId.value,
       userId: actorId.value,
       group: group.value,
       days: days.value,
@@ -157,7 +203,7 @@ async function loadTeam(): Promise<void> {
   teamLoading.value = true
   teamError.value = null
   try {
-    const ov = await adminApi.team(days.value)
+    const ov = await adminApi.team(days.value, scopeId.value)
     members.value = ov.members
     invites.value = ov.invites
   } catch (e) {
@@ -167,14 +213,23 @@ async function loadTeam(): Promise<void> {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadScopes()
   void loadFeed()
   // Команду тянем сразу: её имена нужны подписи фильтра в ленте.
   void loadTeam()
+  void loadWatchList()
 })
 
 watch([days, group, actorId], () => void loadFeed())
 watch(days, () => void loadTeam())
+watch(scopeId, () => {
+  // Смена склада сбрасывает фильтр по человеку: на другом складе его нет.
+  actorId.value = null
+  events.value = []
+  void loadFeed()
+  void loadTeam()
+})
 
 function pickActor(id: string | null): void {
   hapticSelection()
@@ -213,6 +268,38 @@ async function revoke(inv: PendingInvite): Promise<void> {
     toast.error(msg(e, 'Не удалось отозвать'))
   }
 }
+
+async function requestWatch(): Promise<void> {
+  const name = watchName.value.replace(/^@/, '').trim()
+  if (!name || watchBusy.value) return
+  watchBusy.value = true
+  try {
+    await adminApi.requestOversight(name)
+    hapticImpact('medium')
+    toast.success(`Запрос отправлен @${name} — ждём, пока он разрешит`)
+    watchName.value = ''
+    watchOpen.value = false
+    await loadWatchList()
+  } catch (e) {
+    toast.error(msg(e, 'Не удалось отправить запрос'))
+  } finally {
+    watchBusy.value = false
+  }
+}
+
+async function dropWatch(w: OversightOut): Promise<void> {
+  try {
+    await adminApi.dropOversight(w.id)
+    watchList.value = watchList.value.filter((x) => x.id !== w.id)
+    toast.success('Больше не наблюдаем')
+    await loadScopes()
+    if (scopeId.value && !scopes.value.some((x) => x.store_id === scopeId.value)) {
+      scopeId.value = scopes.value[0]?.store_id ?? null
+    }
+  } catch (e) {
+    toast.error(msg(e, 'Не удалось отключить'))
+  }
+}
 </script>
 
 <template>
@@ -230,6 +317,22 @@ async function revoke(inv: PendingInvite): Promise<void> {
         Команда
       </button>
     </div>
+
+    <div v-if="scopes.length > 1" class="chips scope-row">
+      <button
+        v-for="sc in scopes"
+        :key="sc.store_id"
+        :class="['chip', { on: scopeId === sc.store_id }]"
+        @click="scopeId = sc.store_id"
+      >
+        {{ sc.kind === 'watch' ? '👀 ' : '' }}{{ sc.name }}
+      </button>
+    </div>
+
+    <p v-if="!isOwnScope" class="watch-note">
+      Чужой склад. Видна лента действий и счётчики; закупки и прибыль не
+      показываются, изменить здесь ничего нельзя.
+    </p>
 
     <div class="chips periods">
       <button
@@ -346,7 +449,7 @@ async function revoke(inv: PendingInvite): Promise<void> {
           </li>
         </ul>
 
-        <section v-if="invites.length" class="block">
+        <section v-if="isOwnScope && invites.length" class="block">
           <h3 class="sec-title">Ждут первого запуска бота</h3>
           <ul class="team">
             <li v-for="i in invites" :key="i.id" class="member compact">
@@ -361,7 +464,7 @@ async function revoke(inv: PendingInvite): Promise<void> {
           </ul>
         </section>
 
-        <section class="block">
+        <section v-if="isOwnScope" class="block">
           <template v-if="inviteOpen">
             <label class="lbl">Telegram-юзернейм</label>
             <input
@@ -403,6 +506,59 @@ async function revoke(inv: PendingInvite): Promise<void> {
           </template>
           <button v-else class="btn-secondary tap" @click="inviteOpen = true">
             + Добавить человека
+          </button>
+        </section>
+
+        <!-- Чужие склады, за которыми ведём наблюдение -->
+        <section v-if="isOwnScope" class="block">
+          <h3 class="sec-title">Наблюдение за чужими складами</h3>
+          <p class="note">
+            Если человек ведёт свой склад отдельно, он может открыть вам ленту
+            своих действий. Доступ включается только после его подтверждения в
+            боте, и он может закрыть его в любой момент.
+          </p>
+
+          <ul v-if="watchList.length" class="team">
+            <li v-for="w in watchList" :key="w.id" class="member compact">
+              <div class="member-head">
+                <div>
+                  <p class="name">@{{ w.target_username }}</p>
+                  <p class="sub">
+                    {{
+                      w.status === 'ACTIVE'
+                        ? `Открыт склад «${w.store_name}»`
+                        : 'Ждём подтверждения'
+                    }}
+                  </p>
+                </div>
+                <button class="link negative tap" @click="dropWatch(w)">
+                  {{ w.status === 'ACTIVE' ? 'Отключить' : 'Отменить' }}
+                </button>
+              </div>
+            </li>
+          </ul>
+
+          <template v-if="watchOpen">
+            <label class="lbl">Telegram-юзернейм</label>
+            <input
+              v-model="watchName"
+              class="field"
+              placeholder="@username"
+              autocomplete="off"
+            />
+            <div class="row">
+              <button
+                class="btn-primary tap"
+                :disabled="!watchName.trim() || watchBusy"
+                @click="requestWatch"
+              >
+                {{ watchBusy ? '…' : 'Запросить доступ' }}
+              </button>
+              <button class="btn-secondary tap" @click="watchOpen = false">Отмена</button>
+            </div>
+          </template>
+          <button v-else class="btn-secondary tap wide" @click="watchOpen = true">
+            + Запросить доступ к складу
           </button>
         </section>
       </template>
@@ -646,6 +802,20 @@ async function revoke(inv: PendingInvite): Promise<void> {
 .row {
   display: flex;
   gap: 8px;
+  margin-top: 12px;
+}
+.scope-row {
+  padding-bottom: 0;
+}
+.watch-note {
+  margin: 0;
+  padding: 6px 16px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tg-theme-hint-color);
+}
+.wide {
+  width: 100%;
   margin-top: 12px;
 }
 </style>

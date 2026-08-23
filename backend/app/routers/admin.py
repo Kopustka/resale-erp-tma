@@ -1,8 +1,9 @@
-"""Админ-панель владельца склада: лента действий и сводка по команде.
+"""Админ-панель: лента действий и сводка по команде.
 
-Каждый эндпоинт закрыт `require_role(OWNER_ONLY)`, то есть доступен только
-участнику с ролью OWNER на СВОЁМ активном складе. Сотрудник и аналитик
-получают 403 — и панель им не отдаётся даже прямым запросом, мимо интерфейса.
+Смотреть склад вправе двое: его владелец (роль OWNER в store_members) и
+наблюдатель, которому владелец сам открыл доступ через store_oversight.
+Сотрудник и аналитик не проходят никогда — и панель им не отдаётся даже
+прямым запросом, мимо интерфейса.
 
 Привязки к конкретному юзернейму здесь нет намеренно: юзернейм в Telegram
 меняется в один тап, и «панель для @konstantinveliki» после переименования
@@ -14,11 +15,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import OWNER_ONLY, require_role
+from ..auth import get_current_user
 from ..db import get_session
 from ..models import (
     AuditLog,
@@ -27,9 +28,12 @@ from ..models import (
     ItemStatus,
     ItemStatusLog,
     InviteStatus,
+    OversightStatus,
     Role,
+    Store,
     StoreInvite,
     StoreMember,
+    StoreOversight,
     User,
 )
 from ..schemas import (
@@ -37,10 +41,14 @@ from ..schemas import (
     ActivityEvent,
     ActivityPage,
     MemberStats,
+    OversightOut,
+    OversightRequest,
     PendingInvite,
+    ScopeOut,
     TeamOverview,
 )
 from ..services import audit
+from ..services import oversight as ov
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -53,6 +61,51 @@ STATUS_LABELS = {
     ItemStatus.LISTED: "Выставлен",
     ItemStatus.SHIPPED: "Отправлен",
 }
+
+
+
+class Scope:
+    """Разрешённая область просмотра: какой склад и на каком основании."""
+
+    __slots__ = ("store_id", "as_owner")
+
+    def __init__(self, store_id: uuid.UUID, as_owner: bool) -> None:
+        self.store_id = store_id
+        self.as_owner = as_owner
+
+
+async def _owner_of(session: AsyncSession, user: User, store_id: uuid.UUID) -> bool:
+    row = (
+        await session.execute(
+            select(StoreMember.id).where(
+                StoreMember.user_id == user.id,
+                StoreMember.store_id == store_id,
+                StoreMember.role == Role.OWNER,
+            )
+        )
+    ).scalar_one_or_none()
+    return row is not None
+
+
+async def resolve_scope(
+    store_id: uuid.UUID | None = Query(None, description="чужой склад под надзором"),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Scope:
+    """Единственная точка проверки прав на просмотр.
+
+    Держим её одной зависимостью, а не повторяем условие в каждом
+    обработчике: пропущенная проверка в одном месте открыла бы чужой склад
+    целиком, а такую дыру легко не заметить при добавлении эндпоинта.
+    """
+    target = store_id or user.current_store_id
+    if target is None:
+        raise HTTPException(403, "Нет активного склада")
+    if await _owner_of(session, user, target):
+        return Scope(target, True)
+    if await ov.can_watch(session, user.id, target):
+        return Scope(target, False)
+    raise HTTPException(403, "Нет доступа к админ-панели этого склада")
 
 
 def _status_name(s: ItemStatus | None) -> str:
@@ -92,7 +145,7 @@ async def _actors(
 
 @router.get("/activity", response_model=ActivityPage)
 async def activity(
-    member: StoreMember = Depends(require_role(*OWNER_ONLY)),
+    scope: Scope = Depends(resolve_scope),
     session: AsyncSession = Depends(get_session),
     user_id: uuid.UUID | None = Query(None, description="только действия одного участника"),
     group: str | None = Query(None, description="items | status | publishing | settings"),
@@ -117,7 +170,7 @@ async def activity(
     if want_audit:
         q = (
             select(AuditLog)
-            .where(AuditLog.store_id == member.store_id, AuditLog.created_at >= since)
+            .where(AuditLog.store_id == scope.store_id, AuditLog.created_at >= since)
             .order_by(AuditLog.created_at.desc())
             .limit(take)
         )
@@ -147,7 +200,7 @@ async def activity(
         q = (
             select(ItemStatusLog, Item.sku, Item.title)
             .join(Item, Item.id == ItemStatusLog.item_id)
-            .where(Item.store_id == member.store_id, ItemStatusLog.created_at >= since)
+            .where(Item.store_id == scope.store_id, ItemStatusLog.created_at >= since)
             .order_by(ItemStatusLog.created_at.desc())
             .limit(take)
         )
@@ -175,7 +228,7 @@ async def activity(
     has_more = len(events) > offset + limit
 
     ids = {e.actor.user_id for e in window if e.actor.user_id is not None}
-    known = await _actors(session, member.store_id, ids)
+    known = await _actors(session, scope.store_id, ids)
     for e in window:
         if e.actor.user_id is not None:
             e.actor = known.get(e.actor.user_id, e.actor)
@@ -185,13 +238,13 @@ async def activity(
 
 @router.get("/team", response_model=TeamOverview)
 async def team(
-    member: StoreMember = Depends(require_role(*OWNER_ONLY)),
+    scope: Scope = Depends(resolve_scope),
     session: AsyncSession = Depends(get_session),
     days: int = Query(30, ge=1, le=MAX_DAYS),
 ):
     """Кто в команде и что каждый сделал за период."""
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    store_id = member.store_id
+    store_id = scope.store_id
 
     rows = (
         await session.execute(
@@ -300,3 +353,161 @@ async def team(
         members=ordered,
         invites=[PendingInvite.model_validate(i) for i in invites],
     )
+
+
+# --------------------------------------------------------------- надзор
+
+
+@router.get("/scopes", response_model=list[ScopeOut])
+async def scopes(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Склады, которые этот человек вправе открыть в админ-панели."""
+    out: list[ScopeOut] = []
+
+    own = (
+        await session.execute(
+            select(Store)
+            .join(StoreMember, StoreMember.store_id == Store.id)
+            .where(StoreMember.user_id == user.id, StoreMember.role == Role.OWNER)
+            .order_by(Store.created_at)
+        )
+    ).scalars().all()
+    out += [ScopeOut(store_id=s.id, name=s.name, kind="own") for s in own]
+
+    watched = (
+        await session.execute(
+            select(Store, User)
+            .join(StoreOversight, StoreOversight.store_id == Store.id)
+            .outerjoin(User, User.id == Store.owner_id)
+            .where(
+                StoreOversight.watcher_id == user.id,
+                StoreOversight.status == OversightStatus.ACTIVE,
+            )
+            .order_by(Store.name)
+        )
+    ).all()
+    out += [
+        ScopeOut(
+            store_id=st.id,
+            name=st.name,
+            kind="watch",
+            owner_name=(owner.first_name or owner.username) if owner else None,
+        )
+        for st, owner in watched
+    ]
+    return out
+
+
+def _ov_out(r: StoreOversight, store_name: str | None = None) -> OversightOut:
+    return OversightOut(
+        id=r.id,
+        target_username=r.target_username,
+        store_id=r.store_id,
+        store_name=store_name,
+        status=r.status.value,
+        created_at=r.created_at,
+    )
+
+
+@router.get("/oversight", response_model=list[OversightOut])
+async def list_oversight(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Запросы, отправленные этим человеком: ожидающие и действующие."""
+    rows = (
+        await session.execute(
+            select(StoreOversight, Store.name)
+            .outerjoin(Store, Store.id == StoreOversight.store_id)
+            .where(
+                StoreOversight.watcher_id == user.id,
+                StoreOversight.status.in_(
+                    (OversightStatus.PENDING, OversightStatus.ACTIVE)
+                ),
+            )
+            .order_by(StoreOversight.created_at.desc())
+        )
+    ).all()
+    return [_ov_out(r, name) for r, name in rows]
+
+
+@router.post("/oversight", response_model=OversightOut, status_code=201)
+async def request_oversight(
+    payload: OversightRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Попросить человека открыть ленту его склада.
+
+    Ничего не открывает — только отправляет запрос. Доступ появится, когда
+    адресат нажмёт «Разрешить» в боте; до тех пор запрос висит в PENDING.
+    """
+    uname = payload.username.lstrip("@").strip().lower()
+    if not uname:
+        raise HTTPException(422, "Пустой юзернейм")
+    if user.username and uname == user.username.lower():
+        raise HTTPException(422, "Это вы сами")
+
+    dup = (
+        await session.execute(
+            select(StoreOversight).where(
+                StoreOversight.watcher_id == user.id,
+                StoreOversight.target_username == uname,
+                StoreOversight.status.in_(
+                    (OversightStatus.PENDING, OversightStatus.ACTIVE)
+                ),
+            )
+        )
+    ).scalar_one_or_none()
+    if dup is not None:
+        raise HTTPException(
+            409,
+            "Запрос уже отправлен"
+            if dup.status == OversightStatus.PENDING
+            else "Доступ уже открыт",
+        )
+
+    req = StoreOversight(watcher_id=user.id, target_username=uname)
+    session.add(req)
+    await session.commit()
+    await session.refresh(req)
+
+    # Если человек уже знаком боту — спрашиваем сразу; иначе запрос дождётся
+    # его первого /start, и бот покажет вопрос тогда.
+    await ov.deliver(session, req)
+    return _ov_out(req)
+
+
+@router.delete("/oversight/{req_id}", status_code=204)
+async def drop_oversight(
+    req_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Снять наблюдение. Вправе обе стороны: и наблюдатель, и владелец склада."""
+    req = (
+        await session.execute(select(StoreOversight).where(StoreOversight.id == req_id))
+    ).scalar_one_or_none()
+    if req is None:
+        raise HTTPException(404, "Запрос не найден")
+
+    is_watcher = req.watcher_id == user.id
+    is_owner = req.store_id is not None and await _owner_of(session, user, req.store_id)
+    if not (is_watcher or is_owner):
+        raise HTTPException(403, "Нет прав на этот запрос")
+
+    store_name = None
+    if req.store_id is not None:
+        store_name = (
+            await session.execute(select(Store.name).where(Store.id == req.store_id))
+        ).scalar_one_or_none()
+    req.status = OversightStatus.REVOKED
+    req.decided_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    # Владелец закрыл доступ — наблюдатель должен узнать, а не гадать,
+    # почему склад пропал из списка.
+    if is_owner and not is_watcher and store_name:
+        await ov.notify_revoked(session, req, store_name)

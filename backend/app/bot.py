@@ -29,6 +29,8 @@ from .db import SessionLocal
 from .models import (
     Channel,
     ItemStatus,
+    OversightStatus,
+    StoreOversight,
     Subscription,
     InviteStatus,
     Item,
@@ -47,6 +49,7 @@ from .services import (
     ai_template,
     ai_voice,
     comment_reply,
+    oversight,
     post_template,
     preview,
     subscriptions,
@@ -386,10 +389,23 @@ async def cmd_start(message: Message):
 
         await session.commit()
 
+        # Кто-то мог попросить доступ к ленте ещё до того, как человек
+        # впервые открыл бота. Показываем такие запросы сразу — иначе они
+        # висели бы в PENDING незаметно для обеих сторон.
+        waiting = await oversight.pending_for(session, user)
+
     greeting = "Добро пожаловать в ресейл-ERP!"
     if activated:
         greeting = f"Вы добавлены на {activated} склад(ов) по приглашению."
     await message.answer(greeting, reply_markup=_webapp_kb())
+
+    for req in waiting:
+        async with SessionLocal() as s2:
+            fresh = (
+                await s2.execute(select(StoreOversight).where(StoreOversight.id == req.id))
+            ).scalar_one_or_none()
+            if fresh is not None and fresh.status == OversightStatus.PENDING:
+                await oversight.deliver(s2, fresh)
 
 
 def _owner_role():
@@ -551,6 +567,147 @@ async def on_unsubscribe(cq: CallbackQuery):
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=None)
 
+
+
+@dp.callback_query(
+    F.data.startswith(f"{oversight.ACCEPT}:") | F.data.startswith(f"{oversight.DECLINE}:")
+)
+async def on_oversight_decision(cq: CallbackQuery):
+    """Ответ на просьбу открыть ленту действий своего склада."""
+    action, _, raw_id = (cq.data or "").partition(":")
+    try:
+        req_id = uuid.UUID(raw_id)
+    except ValueError:
+        await cq.answer("Некорректная кнопка")
+        return
+
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == cq.from_user.id))
+        ).scalar_one_or_none()
+        req = (
+            await s.execute(select(StoreOversight).where(StoreOversight.id == req_id))
+        ).scalar_one_or_none()
+        if user is None or req is None:
+            await cq.answer("Запрос не найден")
+            return
+        # Кнопку могли переслать: решает только тот, у кого спрашивали.
+        if not user.username or user.username.lower() != req.target_username:
+            await cq.answer("Этот запрос не к вам")
+            return
+        if req.status != OversightStatus.PENDING:
+            await cq.answer("Запрос уже обработан")
+            with suppress(Exception):
+                await cq.message.edit_reply_markup(reply_markup=None)
+            return
+
+        if action == oversight.ACCEPT:
+            store = await oversight.accept(s, req, user)
+            if store is None:
+                await cq.answer("У вас пока нет своего склада", show_alert=True)
+                return
+            await s.commit()
+            await oversight.notify_watcher(s, req, True, store.name)
+            reply = (
+                f"✅ Доступ открыт. Показывается лента действий склада «{store.name}».\n"
+                "Закрыть в любой момент — /nadzor"
+            )
+        else:
+            await oversight.decline(s, req)
+            await s.commit()
+            await oversight.notify_watcher(s, req, False)
+            reply = "✖️ Отказано. Доступ не открыт."
+
+    await cq.answer()
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=None)
+    await cq.message.answer(reply)
+
+
+REVOKE = "ovrm"
+
+
+@dp.callback_query(F.data.startswith(f"{REVOKE}:"))
+async def on_oversight_revoke(cq: CallbackQuery):
+    """Закрыть ранее открытый доступ к своей ленте."""
+    try:
+        req_id = uuid.UUID((cq.data or "").split(":", 1)[1])
+    except (ValueError, IndexError):
+        await cq.answer("Некорректная кнопка")
+        return
+
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == cq.from_user.id))
+        ).scalar_one_or_none()
+        req = (
+            await s.execute(select(StoreOversight).where(StoreOversight.id == req_id))
+        ).scalar_one_or_none()
+        if user is None or req is None:
+            await cq.answer("Не найдено")
+            return
+        if not user.username or user.username.lower() != req.target_username:
+            await cq.answer("Это не ваш доступ")
+            return
+        store_name = (
+            await s.execute(select(Store.name).where(Store.id == req.store_id))
+        ).scalar_one_or_none() or "склад"
+        req.status = OversightStatus.REVOKED
+        await s.commit()
+        await oversight.notify_revoked(s, req, store_name)
+
+    await cq.answer("Доступ закрыт")
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=None)
+    await cq.message.answer("🔒 Доступ закрыт. Лента больше не видна.")
+
+
+@dp.message(Command("nadzor", "надзор"))
+async def cmd_nadzor(message: Message):
+    """Кому открыта лента моего склада — и кнопки, чтобы закрыть."""
+    tg = message.from_user
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == tg.id))
+        ).scalar_one_or_none()
+        if user is None or not user.username:
+            await message.answer("Сначала нажмите /start.")
+            return
+        rows = (
+            await s.execute(
+                select(StoreOversight, User)
+                .outerjoin(User, User.id == StoreOversight.watcher_id)
+                .where(
+                    StoreOversight.target_username == user.username.lower(),
+                    StoreOversight.status == OversightStatus.ACTIVE,
+                )
+            )
+        ).all()
+
+    if not rows:
+        await message.answer("Вашу ленту действий никто не смотрит.")
+        return
+
+    for req, watcher in rows:
+        name = "кто-то"
+        if watcher is not None:
+            name = watcher.first_name or (
+                f"@{watcher.username}" if watcher.username else "кто-то"
+            )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔒 Закрыть доступ", callback_data=f"{REVOKE}:{req.id}"
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            f"👀 <b>{name}</b> видит ленту действий вашего склада.\n"
+            "Он не видит закупочные цены и прибыль и ничего не может менять.",
+            reply_markup=kb,
+        )
 
 @dp.message(Command("подписки", "subs", "subscriptions"))
 async def cmd_subs(message: Message):

@@ -411,3 +411,19 @@ export interface TeamOverview {
   members: MemberStats[]
   invites: PendingInvite[]
 }
+
+export interface AdminScope {
+  store_id: string
+  name: string
+  kind: 'own' | 'watch'
+  owner_name: string | null
+}
+
+export interface OversightOut {
+  id: string
+  target_username: string
+  store_id: string | null
+  store_name: string | null
+  status: string
+  created_at: string
+}

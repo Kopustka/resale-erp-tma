@@ -708,3 +708,51 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_store_time", "store_id", "created_at"),
     )
+
+
+class OversightStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    DECLINED = "DECLINED"
+    REVOKED = "REVOKED"
+
+
+class StoreOversight(Base):
+    """Согласованный доступ к ленте действий чужого склада.
+
+    Нужен, когда человек ведёт СВОЙ склад (сам себе владелец, свои закупки и
+    прибыль), но при этом показывает работу наставнику или заказчику.
+    Членством такое не выразить: членство даёт право менять чужие вещи, а
+    здесь нужно только чтение журнала.
+
+    Ключевое — статус PENDING. Наблюдение не включается по одному желанию
+    наблюдателя: владелец склада подтверждает его в боте. Без этого шага
+    получилась бы слежка за чужим бизнесом.
+
+    Запрос хранит username, а не user_id: попросить можно и того, кто ещё ни
+    разу не открывал бота, — тогда запрос ждёт его первого /start.
+    """
+
+    __tablename__ = "store_oversight"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    watcher_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id"), index=True
+    )
+    target_username: Mapped[str] = mapped_column(String(64), index=True)
+    # Заполняется в момент согласия: до него неизвестно, какой склад покажут.
+    store_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), nullable=True, index=True
+    )
+    status: Mapped[OversightStatus] = mapped_column(
+        SAEnum(OversightStatus, name="oversight_status_enum"),
+        default=OversightStatus.PENDING,
+    )
+    created_at: Mapped[datetime] = _created()
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_oversight_target", "target_username", "status"),
+    )

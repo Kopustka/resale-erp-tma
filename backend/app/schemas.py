@@ -480,3 +480,25 @@ class TeamOverview(BaseModel):
     days: int
     members: list[MemberStats]
     invites: list[PendingInvite]
+
+
+class ScopeOut(BaseModel):
+    """Склад, доступный в админ-панели: свой либо открытый по надзору."""
+
+    store_id: uuid.UUID
+    name: str
+    kind: str  # own | watch
+    owner_name: str | None = None
+
+
+class OversightRequest(BaseModel):
+    username: str = Field(..., description="Telegram username без @")
+
+
+class OversightOut(BaseModel):
+    id: uuid.UUID
+    target_username: str
+    store_id: uuid.UUID | None = None
+    store_name: str | None = None
+    status: str
+    created_at: datetime
