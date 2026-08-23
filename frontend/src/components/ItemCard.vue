@@ -4,8 +4,13 @@
  *
  * Свайпов здесь нет намеренно. Жест был неочевиден (о нём нужно догадаться),
  * конфликтовал с вертикальной прокруткой и срабатывал вхолостую при быстром
- * пролистывании. Вместо него — явная кнопка перехода в следующий статус:
- * видно, что произойдёт, до нажатия, и промахнуться мимо неё нельзя.
+ * пролистывании. Вместо него — явная кнопка перехода в следующий статус.
+ *
+ * В кнопке только целевой статус, без текущего: текущий уже написан бейджем
+ * справа сверху, и полная надпись «Сфотографирован → Выставлен» не влезала
+ * в строку рядом с ценой — обрезалась многоточием. Кнопка повторяет форму
+ * бейджа, отличаясь только цветом, поэтому пара читается как «сейчас — и
+ * куда дальше», а не как два разных элемента.
  *
  * Архивация уехала в карточку товара: в строке ей не место, если жестов нет,
  * а второй кнопкой рядом со статусом легко попасть по ошибке.
@@ -61,72 +66,72 @@ function onStep(e: Event): void {
 </script>
 
 <template>
-  <div class="card-wrap">
-    <div class="card" @click="emit('open')">
-      <div class="photo">
-        <AuthImage
-          :item-id="item.id"
-          :index="0"
-          :photo-count="item.photo_count"
-          :alt="item.title"
-          :width="400"
-        />
+  <div class="card" @click="emit('open')">
+    <div class="photo">
+      <AuthImage
+        :item-id="item.id"
+        :index="0"
+        :photo-count="item.photo_count"
+        :alt="item.title"
+        :width="400"
+      />
+    </div>
+    <div class="body">
+      <div class="row-top">
+        <span class="sku num">{{ item.sku }}</span>
+        <StatusBadge :status="item.status" />
       </div>
-      <div class="body">
-        <div class="row-top">
-          <span class="sku num">{{ item.sku }}</span>
-          <StatusBadge :status="item.status" />
-        </div>
-        <div v-if="generating" class="title-line gen-shimmer">✨ Генерирую название…</div>
-        <div v-else class="title-line">{{ item.title }}</div>
-        <div v-if="generating" class="cat gen-shimmer gen-small">описание пишется по фото</div>
-        <div v-else class="cat hint">
-          {{ item.brand }} · {{ item.category }}<span v-if="item.size"> · {{ item.size }}</span>
-        </div>
+      <div v-if="generating" class="title-line gen-shimmer">✨ Генерирую название…</div>
+      <div v-else class="title-line">{{ item.title }}</div>
+      <div v-if="generating" class="cat gen-shimmer gen-small">описание пишется по фото</div>
+      <div v-else class="cat hint">
+        {{ item.brand }} · {{ item.category }}<span v-if="item.size"> · {{ item.size }}</span>
+      </div>
 
-        <div class="bottom-row">
-          <button
-            v-if="showStep"
-            class="step tap"
-            :aria-label="`Перевести в «${nextLabel}»`"
-            @click="onStep"
-          >
-            <span class="step-now">{{ STATUS_LABELS[item.status] }}</span>
-            <span class="step-arrow" aria-hidden="true">→</span>
-            <span class="step-next">{{ nextLabel }}</span>
-          </button>
-          <span v-else class="step-empty"></span>
+      <div class="bottom-row">
+        <button
+          v-if="showStep"
+          class="step tap"
+          :aria-label="`Перевести из «${STATUS_LABELS[item.status]}» в «${nextLabel}»`"
+          @click="onStep"
+        >
+          <span class="step-arrow" aria-hidden="true">→</span>
+          <span class="step-next">{{ nextLabel }}</span>
+        </button>
+        <span v-else class="step-empty"></span>
 
-          <span v-if="showFinance" class="price-row">
-            <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
-            <Money :value="priceValue" :colored="soldLike" strong />
-          </span>
-        </div>
+        <span v-if="showFinance" class="price-row">
+          <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
+          <Money :value="priceValue" :colored="soldLike" strong />
+        </span>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.card-wrap {
-  position: relative;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--tg-theme-secondary-bg-color);
-}
+/*
+ * Строка — серая плашка на светлом фоне, как блоки в настройках и админке.
+ * Раньше фон карточки совпадал с фоном экрана, и список читался сплошным
+ * полотном: границы строк были видны только по вертикальным зазорам.
+ *
+ * Высота ровно 112px — на неё завязан ROW_HEIGHT виртуального списка в
+ * InventoryScreen. Меняя её, поправьте и там, иначе поедет прокрутка.
+ */
 .card {
   position: relative;
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  background: var(--tg-theme-bg-color);
+  gap: 10px;
+  padding: 12px 10px;
+  border-radius: var(--radius);
+  background: var(--tg-theme-secondary-bg-color);
   height: 112px;
   user-select: none;
   -webkit-user-select: none;
 }
 .photo {
   flex: none;
-  width: 88px;
+  width: 80px;
   height: 88px;
   pointer-events: none;
 }
@@ -174,51 +179,44 @@ function onStep(e: Event): void {
   min-width: 0;
 }
 /*
- * Кнопка узкая по содержимому и с увеличенной областью нажатия по вертикали:
- * строка невысокая, а палец на телефоне толще подписи.
+ * Повторяет геометрию StatusBadge (шрифт, скругление, отступы, заливка),
+ * чтобы бейдж статуса и кнопка перехода выглядели одной парой.
+ * Отрицательный вертикальный margin возвращает площадь нажатия, не раздвигая
+ * строку: карточка фиксированной высоты, её считает виртуальный список.
  */
 .step {
+  /* Сжимается первой: на узком экране обрезать название статуса не жалко,
+     а цену пользователь должен видеть целиком. */
   flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
-  margin: -3px 0;
-  border-radius: 999px;
-  background: var(--tg-theme-secondary-bg-color);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
+  gap: 5px;
+  padding: 4px 8px;
+  margin: -4px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
-  overflow: hidden;
+  color: var(--tg-theme-link-color);
+  /* К фону темы, а не к прозрачности: на серой плашке альфа-заливка
+     сливается с подложкой и чип теряет очертания. */
+  background: color-mix(in srgb, var(--tg-theme-link-color) 18%, var(--tg-theme-bg-color));
 }
 .step:active {
   background: var(--tg-theme-button-color);
   color: var(--tg-theme-button-text-color);
 }
-.step-now {
-  color: var(--tg-theme-hint-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.step:active .step-now {
-  color: inherit;
+.step-arrow {
+  flex: none;
   opacity: 0.75;
 }
-.step-arrow {
-  color: var(--tg-theme-hint-color);
-  flex: none;
-}
-.step:active .step-arrow {
-  color: inherit;
-}
 .step-next {
-  color: var(--tg-theme-link-color);
-  flex: none;
-}
-.step:active .step-next {
-  color: inherit;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .step-empty {
   flex: 1;

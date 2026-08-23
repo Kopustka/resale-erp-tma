@@ -70,7 +70,9 @@ async function publishDrop(): Promise<void> {
 const session = useSessionStore()
 const { items: itemList, loading, loadingMore, error, isEmpty } = storeToRefs(items)
 
-const ROW_HEIGHT = 124
+// Высота строки = карточка (112) + зазор (8). Обе величины в CSS ItemCard
+// и .row ниже; расходиться им нельзя, иначе виртуальный список поедет.
+const ROW_HEIGHT = 120
 const { list, containerProps, wrapperProps } = useVirtualList(itemList, {
   itemHeight: ROW_HEIGHT,
   overscan: 6,
@@ -413,10 +415,11 @@ onBeforeUnmount(() => {
 .list {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  /* По бокам уже, чем сверху: строке нужна ширина под название и цену. */
+  padding: 12px 8px;
 }
 .row {
-  padding-bottom: 12px;
+  padding-bottom: 8px;
 }
 .state {
   flex: 1;

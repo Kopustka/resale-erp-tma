@@ -27,8 +27,9 @@ const label = computed(() => STATUS_LABELS[props.status])
   padding: 4px 8px;
   border-radius: 6px;
   color: var(--c);
-  /* Плоский фон-акцент: цвет статуса с низкой альфой поверх подложки. */
-  background: color-mix(in srgb, var(--c) 14%, transparent);
+  /* Плоский фон-акцент: цвет статуса, подмешанный к фону темы. На белом
+     выглядит как раньше, но на серой плашке списка не мутнеет. */
+  background: color-mix(in srgb, var(--c) 18%, var(--tg-theme-bg-color));
   white-space: nowrap;
 }
 .dot {
