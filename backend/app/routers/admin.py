@@ -439,10 +439,11 @@ async def request_oversight(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Попросить человека открыть ленту его склада.
+    """Подключить чужой склад к своей панели.
 
-    Ничего не открывает — только отправляет запрос. Доступ появится, когда
-    адресат нажмёт «Разрешить» в боте; до тех пор запрос висит в PENDING.
+    Если человек уже знаком боту и владеет складом — подключается сразу.
+    Иначе запись ждёт в PENDING и привяжется при его первом /start: до
+    этого момента склада, который можно показать, попросту не существует.
     """
     uname = payload.username.lstrip("@").strip().lower()
     if not uname:
@@ -471,13 +472,15 @@ async def request_oversight(
 
     req = StoreOversight(watcher_id=user.id, target_username=uname)
     session.add(req)
+    await session.flush()
+
+    target = (
+        await session.execute(select(User).where(User.username == uname))
+    ).scalar_one_or_none()
+    store = await ov.bind(session, req, target) if target is not None else None
     await session.commit()
     await session.refresh(req)
-
-    # Если человек уже знаком боту — спрашиваем сразу; иначе запрос дождётся
-    # его первого /start, и бот покажет вопрос тогда.
-    await ov.deliver(session, req)
-    return _ov_out(req)
+    return _ov_out(req, store.name if store is not None else None)
 
 
 @router.delete("/oversight/{req_id}", status_code=204)
@@ -498,16 +501,6 @@ async def drop_oversight(
     if not (is_watcher or is_owner):
         raise HTTPException(403, "Нет прав на этот запрос")
 
-    store_name = None
-    if req.store_id is not None:
-        store_name = (
-            await session.execute(select(Store.name).where(Store.id == req.store_id))
-        ).scalar_one_or_none()
     req.status = OversightStatus.REVOKED
     req.decided_at = datetime.now(timezone.utc)
     await session.commit()
-
-    # Владелец закрыл доступ — наблюдатель должен узнать, а не гадать,
-    # почему склад пропал из списка.
-    if is_owner and not is_watcher and store_name:
-        await ov.notify_revoked(session, req, store_name)

@@ -274,9 +274,13 @@ async function requestWatch(): Promise<void> {
   if (!name || watchBusy.value) return
   watchBusy.value = true
   try {
-    await adminApi.requestOversight(name)
+    const res = await adminApi.requestOversight(name)
     hapticImpact('medium')
-    toast.success(`Запрос отправлен @${name} — ждём, пока он разрешит`)
+    toast.success(
+      res.status === 'ACTIVE'
+        ? `Склад @${name} подключён`
+        : `@${name} ещё не запускал бота — подключится при первом /start`,
+    )
     watchName.value = ''
     watchOpen.value = false
     await loadWatchList()
@@ -511,11 +515,12 @@ async function dropWatch(w: OversightOut): Promise<void> {
 
         <!-- Чужие склады, за которыми ведём наблюдение -->
         <section v-if="isOwnScope" class="block">
-          <h3 class="sec-title">Наблюдение за чужими складами</h3>
+          <h3 class="sec-title">Чужие склады в этой панели</h3>
           <p class="note">
-            Если человек ведёт свой склад отдельно, он может открыть вам ленту
-            своих действий. Доступ включается только после его подтверждения в
-            боте, и он может закрыть его в любой момент.
+            Если человек ведёт свой склад отдельно, его ленту можно подключить
+            сюда по юзернейму. Видны действия и счётчики; закупки и прибыль —
+            нет. Если он ещё не запускал бота, склад подключится сам при первом
+            его <code>/start</code>.
           </p>
 
           <ul v-if="watchList.length" class="team">
@@ -526,8 +531,8 @@ async function dropWatch(w: OversightOut): Promise<void> {
                   <p class="sub">
                     {{
                       w.status === 'ACTIVE'
-                        ? `Открыт склад «${w.store_name}»`
-                        : 'Ждём подтверждения'
+                        ? `Склад «${w.store_name}»`
+                        : 'Ещё не запускал бота — подключится при /start'
                     }}
                   </p>
                 </div>
@@ -552,13 +557,13 @@ async function dropWatch(w: OversightOut): Promise<void> {
                 :disabled="!watchName.trim() || watchBusy"
                 @click="requestWatch"
               >
-                {{ watchBusy ? '…' : 'Запросить доступ' }}
+                {{ watchBusy ? '…' : 'Подключить' }}
               </button>
               <button class="btn-secondary tap" @click="watchOpen = false">Отмена</button>
             </div>
           </template>
           <button v-else class="btn-secondary tap wide" @click="watchOpen = true">
-            + Запросить доступ к складу
+            + Подключить чужой склад
           </button>
         </section>
       </template>
