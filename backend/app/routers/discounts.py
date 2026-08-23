@@ -13,6 +13,7 @@ from ..auth import CAN_EDIT, get_active_membership, get_current_user
 from ..db import get_session
 from ..models import (
     Discount,
+    Store,
     ItemStatus,
     DiscountStatus,
     Item,
@@ -23,7 +24,7 @@ from ..models import (
 )
 from ..schemas import DiscountCreate, DiscountOut
 from ..services import discounts as svc
-from ..services import audit
+from ..services import audit, preview, preview_hold
 from ..services import fx
 
 router = APIRouter(prefix="/api/v1/discounts", tags=["discounts"])
@@ -160,7 +161,29 @@ async def create_discount(
     await session.commit()
     await session.refresh(discount)
 
-    await svc.enqueue_announcements(session, discount, run_at=when)
+    hold = await preview.is_enabled(session, member.store_id)
+    jobs = await svc.enqueue_announcements(session, discount, run_at=when, hold=hold)
+
+    if hold and jobs:
+        store = (
+            await session.execute(select(Store).where(Store.id == member.store_id))
+        ).scalar_one_or_none()
+        preview_hold.send_in_background(
+            telegram_id=user.telegram_id,
+            kind=preview.DISCOUNT,
+            entity_id=discount.id,
+            body=svc.build_message(
+                discount,
+                item,
+                fx.symbol(currency),
+                store.discount_template if store else None,
+                store.channel_signature if store else None,
+            ),
+            photo_entry=None,
+            channels=len(jobs),
+            job_ids=[j.id for j in jobs],
+            when=when,
+        )
     return _out(discount, item.sku, item.title)
 
 

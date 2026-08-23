@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import CAN_EDIT, get_active_membership
+from ..auth import CAN_EDIT, get_active_membership, get_current_user
 from ..db import get_session
-from ..models import Channel, Drop, DropItem, Item, JobKind, StoreMember
+from ..models import Channel, Drop, DropItem, Item, JobKind, StoreMember, User
 from ..schemas import DropCreate, DropOut
-from ..services import post_queue
+from ..services import post_queue, preview, preview_hold
 from ..services import audit
-from ..services.drops import MAX_ITEMS
+from ..services.drops import MAX_ITEMS, build_caption
 
 router = APIRouter(prefix="/api/v1/drops", tags=["drops"])
 
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/v1/drops", tags=["drops"])
 async def create_drop(
     payload: DropCreate,
     member: StoreMember = Depends(get_active_membership),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     """Собирает подборку и ставит её публикацию во все включённые каналы."""
@@ -73,15 +74,21 @@ async def create_drop(
             )
         )
     ).scalars().all()
+    jobs = []
     for ch in channels:
-        await post_queue.enqueue(
-            session,
-            store_id=member.store_id,
-            kind=JobKind.DROP_POST,
-            channel_id=ch.chat_id,
-            channel_uid=ch.id,
-            drop_id=drop.id,
+        jobs.append(
+            await post_queue.enqueue(
+                session,
+                store_id=member.store_id,
+                kind=JobKind.DROP_POST,
+                channel_id=ch.chat_id,
+                channel_uid=ch.id,
+                drop_id=drop.id,
+            )
         )
+    hold = await preview.is_enabled(session, member.store_id)
+    if hold and jobs:
+        preview_hold.hold(jobs)
     audit.record(
         session,
         store_id=member.store_id,
@@ -92,6 +99,22 @@ async def create_drop(
         entity_id=drop.id,
     )
     await session.commit()
+
+    if hold and jobs:
+        ordered = [found[i] for i in ids]
+        first_photo = next(
+            (photos[0] for photos in (i.photo_file_ids or [] for i in ordered) if photos),
+            None,
+        )
+        preview_hold.send_in_background(
+            telegram_id=user.telegram_id,
+            kind=preview.DROP,
+            entity_id=drop.id,
+            body=build_caption(drop, ordered),
+            photo_entry=first_photo,
+            channels=len(jobs),
+            job_ids=[j.id for j in jobs],
+        )
 
     return DropOut(
         id=drop.id,

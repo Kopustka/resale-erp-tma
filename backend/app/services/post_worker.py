@@ -419,6 +419,9 @@ async def scan_for_bumps(session) -> int:
         )
     ).scalars().all()
     queued = 0
+    # Предпросмотры шлём после коммита: внутри цикла отправка держала бы
+    # транзакцию на время запросов к Telegram.
+    pending_previews: list = []
     for store in stores:
         listed_before = now - timedelta(days=store.bump_after_days)
         cooldown = now - timedelta(days=BUMP_COOLDOWN_DAYS)
@@ -450,7 +453,7 @@ async def scan_for_bumps(session) -> int:
             ).scalar_one_or_none()
             if busy is not None:
                 continue
-            await post_queue.enqueue(
+            job = await post_queue.enqueue(
                 session,
                 store_id=store.id,
                 kind=JobKind.BUMP,
@@ -459,10 +462,64 @@ async def scan_for_bumps(session) -> int:
                 item_id=item.id,
                 message_id=post.message_id,
             )
+            # Поднятие тоже создаёт новое сообщение в канале, поэтому при
+            # включённом предпросмотре спрашиваем владельца. Момента
+            # «создания» у него нет — обход находит вещь сам, — так что
+            # предпросмотр уходит в момент постановки задания.
+            if store.preview_before_post:
+                job.status = JobStatus.AWAITING
+                pending_previews.append((store, item, ch, job))
             queued += 1
     if queued:
         await session.commit()
+    for store, item, ch, job in pending_previews:
+        await _send_bump_preview(store, item, job)
     return queued
+
+
+async def _send_bump_preview(store: Store, item: Item, job: PostJob) -> None:
+    """Спрашивает владельца перед поднятием вещи.
+
+    Недоставленный предпросмотр не должен подвешивать очередь: если писать
+    некому или бот заблокирован, поднимаем без подтверждения.
+    """
+    from ..models import User
+    from . import preview
+
+    async with SessionLocal() as s:
+        owner = (
+            await s.execute(select(User).where(User.id == store.owner_id))
+        ).scalar_one_or_none()
+        if owner is None:
+            return
+        ctx = await _load_context(s, job)
+        if ctx is None:
+            return
+        caption = telegram_post.build_caption(
+            ctx["post"], ctx["signature"], ctx["template"]
+        )
+        photos = ctx["post"].get("photo_file_ids") or []
+        try:
+            sent = await preview.send_entity_preview(
+                owner.telegram_id,
+                preview.BUMP,
+                item.id,
+                caption,
+                photos[0] if photos else None,
+                1,
+                ctx["watermark"],
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("предпросмотр поднятия не ушёл: %s", e)
+            sent = False
+        if not sent:
+            await s.execute(
+                update(PostJob)
+                .where(PostJob.id == job.id, PostJob.status == JobStatus.AWAITING)
+                .values(status=JobStatus.PENDING)
+                .execution_options(synchronize_session=False)
+            )
+            await s.commit()
 
 
 async def run_forever() -> None:

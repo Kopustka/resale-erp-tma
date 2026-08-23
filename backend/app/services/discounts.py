@@ -154,9 +154,14 @@ def build_message(
 
 
 async def enqueue_announcements(
-    session: AsyncSession, discount: Discount, run_at=None
-) -> int:
-    """Ставит объявление в каждый канал, где вещь опубликована и не продана."""
+    session: AsyncSession, discount: Discount, run_at=None, hold: bool = False
+) -> list:
+    """Ставит объявление в каждый канал, где вещь опубликована и не продана.
+
+    hold=True — задания создаются ожидающими подтверждения владельца.
+    Возвращает созданные задания: вызывающему нужны их id, чтобы снять
+    ожидание, если предпросмотр не удалось доставить.
+    """
     rows = (
         await session.execute(
             select(ItemPost, Channel)
@@ -169,7 +174,7 @@ async def enqueue_announcements(
         )
     ).all()
     if not rows:
-        return 0
+        return []
 
     queued = set(
         (
@@ -182,11 +187,11 @@ async def enqueue_announcements(
         ).scalars().all()
     )
 
-    n = 0
+    jobs = []
     for post, ch in rows:
         if ch.id in queued:
             continue
-        await post_queue.enqueue(
+        job = await post_queue.enqueue(
             session,
             store_id=discount.store_id,
             kind=JobKind.DISCOUNT_POST,
@@ -198,7 +203,9 @@ async def enqueue_announcements(
             message_id=post.message_id,
             run_at=run_at,
         )
-        n += 1
-    if n:
+        if hold:
+            job.status = JobStatus.AWAITING
+        jobs.append(job)
+    if jobs:
         await session.commit()
-    return n
+    return jobs

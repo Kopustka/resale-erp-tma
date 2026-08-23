@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from io import BytesIO
 from contextlib import suppress
 
@@ -28,6 +29,10 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import (
     Channel,
+    CustomPost,
+    CustomPostStatus,
+    Discount,
+    DiscountStatus,
     ItemStatus,
     OversightStatus,
     StoreOversight,
@@ -49,6 +54,7 @@ from .services import (
     ai_template,
     ai_voice,
     comment_reply,
+    fx,
     oversight,
     post_template,
     preview,
@@ -406,13 +412,28 @@ def _owner_role():
 
 @dp.callback_query(F.data.startswith(f"{preview.APPROVE}:") | F.data.startswith(f"{preview.DECLINE}:"))
 async def on_preview_decision(cq: CallbackQuery):
-    """Кнопки под предпросмотром: публикуем задания или отменяем их."""
-    action, _, raw_id = (cq.data or "").partition(":")
-    try:
-        item_id = uuid.UUID(raw_id)
-    except ValueError:
+    """Кнопки под предпросмотром: пускаем публикацию в работу или отменяем.
+
+    Подтверждение НЕ публикует немедленно, а снимает блокировку: задание
+    переходит из AWAITING в PENDING со своим прежним run_after. Пост,
+    назначенный на вечер, так и уйдёт вечером.
+    """
+    parsed = preview.parse_callback(cq.data or "")
+    if parsed is None:
         await cq.answer("Некорректная кнопка")
         return
+    action, kind, entity_id = parsed
+
+    # По какому полю и виду задания искать. Вид обязателен там, где ключ —
+    # item_id: у вещи и её поднятия он один, и без фильтра одна кнопка
+    # отпускала бы оба задания сразу.
+    field, job_kind = {
+        preview.ITEM: ("item_id", JobKind.POST_ITEM),
+        preview.BUMP: ("item_id", JobKind.BUMP),
+        preview.POST: ("custom_post_id", None),
+        preview.DISCOUNT: ("discount_id", None),
+        preview.DROP: ("drop_id", None),
+    }[kind]
 
     async with SessionLocal() as s:
         user = (
@@ -422,15 +443,13 @@ async def on_preview_decision(cq: CallbackQuery):
             await cq.answer("Вы не зарегистрированы", show_alert=True)
             return
 
-        jobs = (
-            await s.execute(
-                select(PostJob).where(
-                    PostJob.item_id == item_id,
-                    PostJob.kind == JobKind.POST_ITEM,
-                    PostJob.status == JobStatus.AWAITING,
-                )
-            )
-        ).scalars().all()
+        q = select(PostJob).where(
+            getattr(PostJob, field) == entity_id,
+            PostJob.status == JobStatus.AWAITING,
+        )
+        if job_kind is not None:
+            q = q.where(PostJob.kind == job_kind)
+        jobs = (await s.execute(q)).scalars().all()
         if not jobs:
             await cq.answer("Этот предпросмотр уже неактуален")
             with suppress(Exception):
@@ -452,38 +471,100 @@ async def on_preview_decision(cq: CallbackQuery):
             await cq.answer("Нет прав на публикацию", show_alert=True)
             return
 
-        new_status = JobStatus.PENDING if action == preview.APPROVE else JobStatus.CANCELLED
+        approved = action == preview.APPROVE
         for job in jobs:
-            job.status = new_status
+            job.status = JobStatus.PENDING if approved else JobStatus.CANCELLED
 
-        reverted = False
-        if action != preview.APPROVE:
-            # Публикацию отклонили — значит вещь не выставлена. Раньше она
-            # оставалась в «Выложен» без поста в канале: состояние
-            # расходилось, и повторное выставление молча пропускалось
-            # защитой от дублей.
-            item = (
-                await s.execute(select(Item).where(Item.id == item_id))
-            ).scalar_one_or_none()
-            if item is not None and item.status == ItemStatus.LISTED:
-                back = prev_status(ItemStatus.LISTED)
-                if back is not None:
-                    repo = ItemRepository(s)
-                    reverted = await repo.apply_status(
-                        item, back, expected_version=item.version, changed_by=user.id
-                    )
+        extra = ""
+        if not approved:
+            extra = await _rollback_declined(s, kind, entity_id, user)
+
+        scheduled_at = min((j.run_after for j in jobs), default=None)
         await s.commit()
 
-    note = (
-        "✅ Отправляю в канал…"
-        if action == preview.APPROVE
-        else ("✖️ Публикация отменена, вещь вернулась в «Сфотографирован»"
-              if reverted else "✖️ Публикация отменена")
-    )
-    await cq.answer(note)
+    if approved:
+        now = datetime.now(timezone.utc)
+        note = (
+            "✅ Отправляю в канал…"
+            if scheduled_at is None or scheduled_at <= now
+            else f"✅ Подтверждено. Выйдет {scheduled_at.astimezone().strftime('%d.%m в %H:%M')}"
+        )
+    else:
+        note = "✖️ Публикация отменена" + extra
+
+    await cq.answer(note[:200])
     with suppress(Exception):
         await cq.message.edit_reply_markup(reply_markup=None)
         await cq.message.reply(note)
+
+
+async def _rollback_declined(s, kind: str, entity_id, user: User) -> str:
+    """Приводит сущность в согласованное состояние после отказа.
+
+    Без этого отменённая публикация оставляла бы следы: вещь висела бы в
+    «Выставлен» без поста в канале, пост контент-плана ждал бы в
+    расписании, а немедленная скидка так и осталась бы применённой к цене,
+    хотя объявления о ней никто не увидит.
+    """
+    if kind == preview.ITEM:
+        item = (
+            await s.execute(select(Item).where(Item.id == entity_id))
+        ).scalar_one_or_none()
+        if item is not None and item.status == ItemStatus.LISTED:
+            back = prev_status(ItemStatus.LISTED)
+            if back is not None:
+                repo = ItemRepository(s)
+                if await repo.apply_status(
+                    item, back, expected_version=item.version, changed_by=user.id
+                ):
+                    return ", вещь вернулась в «Сфотографирован»"
+        return ""
+
+    if kind == preview.POST:
+        post = (
+            await s.execute(select(CustomPost).where(CustomPost.id == entity_id))
+        ).scalar_one_or_none()
+        if post is not None and post.status == CustomPostStatus.SCHEDULED:
+            post.status = CustomPostStatus.CANCELLED
+            return ", пост снят с расписания"
+        return ""
+
+    if kind == preview.DISCOUNT:
+        d = (
+            await s.execute(select(Discount).where(Discount.id == entity_id))
+        ).scalar_one_or_none()
+        if d is None or d.status != DiscountStatus.SCHEDULED:
+            return ""
+        d.status = DiscountStatus.CANCELLED
+        # Немедленную скидку цена вещи получает сразу при создании, ещё до
+        # объявления. Отказ обязан вернуть прежний ценник, иначе вещь
+        # молча продавалась бы дешевле без всякой акции.
+        item = (
+            await s.execute(select(Item).where(Item.id == d.item_id))
+        ).scalar_one_or_none()
+        if item is not None and item.list_price_orig == d.new_price:
+            item.list_price_orig = d.old_price
+            item.price_before_discount = None
+            item.list_price = await fx.convert(
+                d.old_price, d.currency, item.cost_currency or "BYN"
+            )
+            return ", цена возвращена"
+        return ", скидка отменена"
+
+    if kind == preview.DROP:
+        return ", дроп не опубликован"
+
+    if kind == preview.BUMP:
+        # Отметка о поднятии, чтобы отклонённая вещь не предлагалась снова
+        # на следующем же обходе очереди.
+        await s.execute(
+            update(Item)
+            .where(Item.id == entity_id)
+            .values(bumped_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
+        )
+        return ", вещь не поднята"
+    return ""
 
 
 @dp.callback_query(F.data.startswith("sub:"))

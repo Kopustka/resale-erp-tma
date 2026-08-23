@@ -21,7 +21,7 @@ from ..models import (
     User,
 )
 from ..schemas import CustomPostCreate, CustomPostOut
-from ..services import audit, post_queue
+from ..services import audit, post_queue, preview, preview_hold
 
 router = APIRouter(prefix="/api/v1/posts", tags=["posts"])
 
@@ -95,16 +95,26 @@ async def create_post(
     session.add(post)
     await session.flush()
 
+    jobs = []
     for ch in channels:
-        await post_queue.enqueue(
-            session,
-            store_id=member.store_id,
-            kind=JobKind.CUSTOM_POST,
-            channel_id=ch.chat_id,
-            channel_uid=ch.id,
-            custom_post_id=post.id,
-            run_at=when,
+        jobs.append(
+            await post_queue.enqueue(
+                session,
+                store_id=member.store_id,
+                kind=JobKind.CUSTOM_POST,
+                channel_id=ch.chat_id,
+                channel_uid=ch.id,
+                custom_post_id=post.id,
+                run_at=when,
+            )
         )
+
+    # Предпросмотр запрашиваем сразу при создании, даже если публикация
+    # назначена на вечер: подтверждать пост в момент, когда он уже уходит,
+    # владелец бы не успевал.
+    hold = await preview.is_enabled(session, member.store_id)
+    if hold:
+        preview_hold.hold(jobs)
     audit.record(
         session,
         store_id=member.store_id,
@@ -116,6 +126,19 @@ async def create_post(
     )
     await session.commit()
     await session.refresh(post)
+
+    if hold:
+        photos = list(post.photo_file_ids or [])
+        preview_hold.send_in_background(
+            telegram_id=user.telegram_id,
+            kind=preview.POST,
+            entity_id=post.id,
+            body=post.body,
+            photo_entry=photos[0] if photos else None,
+            channels=len(jobs),
+            job_ids=[j.id for j in jobs],
+            when=when,
+        )
     return _out(post)
 
 
