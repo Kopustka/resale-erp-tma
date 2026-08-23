@@ -23,6 +23,7 @@ from ..schemas import (
     TemplatePreviewOut,
 )
 from ..services import ai_template
+from ..services import audit
 from ..services import post_template as pt
 from ..services import template_capture
 from ..services.ai_describe import AiGenerationError, AiNotConfigured
@@ -185,6 +186,16 @@ async def create_template(
         is_default=has_any is None,  # первый шаблон сразу становится активным
     )
     session.add(tpl)
+    await session.flush()
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.TEMPLATE_CREATE,
+        summary=tpl.name,
+        entity_type="template",
+        entity_id=tpl.id,
+    )
     await session.commit()
     await session.refresh(tpl)
     return tpl
@@ -207,6 +218,15 @@ async def update_template(
         tpl.body = payload.body
     if payload.name is not None:
         tpl.name = payload.name.strip()
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.TEMPLATE_EDIT,
+        summary=tpl.name,
+        entity_type="template",
+        entity_id=tpl.id,
+    )
     await session.commit()
     await session.refresh(tpl)
     return tpl
@@ -222,6 +242,15 @@ async def make_default(
     tpl = await _get_owned(session, member.store_id, template_id)
     await _clear_default(session, member.store_id)
     tpl.is_default = True
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.TEMPLATE_DEFAULT,
+        summary=tpl.name,
+        entity_type="template",
+        entity_id=tpl.id,
+    )
     await session.commit()
     await session.refresh(tpl)
     return tpl
@@ -236,6 +265,15 @@ async def delete_template(
 ):
     tpl = await _get_owned(session, member.store_id, template_id)
     was_default = tpl.is_default
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.TEMPLATE_DELETE,
+        summary=tpl.name,
+        entity_type="template",
+        entity_id=None,
+    )
     await session.delete(tpl)
     await session.flush()
 

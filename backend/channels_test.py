@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
 from app.models import (
-    Channel,
+    AuditLog, Channel,
     Item,
     ItemPost,
     ItemStatus,
@@ -96,6 +96,7 @@ async def teardown(store_id):
         if u:
             u.current_store_id = None
             await s.flush()
+        await s.execute(delete(AuditLog).where(AuditLog.store_id == store_id))
         await s.execute(delete(Store).where(Store.id == store_id))
         if u:
             await s.execute(delete(User).where(User.id == u.id))

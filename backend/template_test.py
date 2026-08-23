@@ -20,7 +20,7 @@ from sqlalchemy import delete, select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import PostTemplate, Role, Store, StoreMember, User
+from app.models import AuditLog, PostTemplate, Role, Store, StoreMember, User
 from app.services import ai_template, post_template as pt
 from app.services import template_capture
 
@@ -88,6 +88,7 @@ async def teardown() -> None:
         user.current_store_id = None
         await s.flush()
         for st in stores:
+            await s.execute(delete(AuditLog).where(AuditLog.store_id == st.id))
             await s.execute(delete(Store).where(Store.id == st.id))
         await s.execute(delete(User).where(User.id == user.id))
         await s.commit()

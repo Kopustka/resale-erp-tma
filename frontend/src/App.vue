@@ -20,6 +20,7 @@ const ItemDetail = defineAsyncComponent(() => import('@/screens/ItemDetail.vue')
 const TemplatesScreen = defineAsyncComponent(() => import('@/screens/TemplatesScreen.vue'))
 const ChannelsScreen = defineAsyncComponent(() => import('@/screens/ChannelsScreen.vue'))
 const CalendarScreen = defineAsyncComponent(() => import('@/screens/CalendarScreen.vue'))
+const AdminScreen = defineAsyncComponent(() => import('@/screens/AdminScreen.vue'))
 
 
 const session = useSessionStore()
@@ -105,6 +106,8 @@ onMounted(() => {
     <ChannelsScreen v-if="nav.overlay === 'channels'" />
     <!-- Оверлей контент-плана (только OWNER) -->
     <CalendarScreen v-if="nav.overlay === 'calendar'" />
+    <!-- Оверлей админ-панели (только OWNER) -->
+    <AdminScreen v-if="nav.overlay === 'admin'" />
 
     <ToastHost />
   </div>

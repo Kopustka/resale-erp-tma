@@ -354,3 +354,60 @@ export interface ItemFilters {
   search?: string | null
   ids?: string[] | null
 }
+
+// -------------------------------- Админка -------------------------------- //
+
+export type ActivityGroup = 'items' | 'status' | 'publishing' | 'settings'
+
+export interface ActivityActor {
+  user_id: string | null
+  username: string | null
+  first_name: string | null
+  role: Role | null
+}
+
+export interface ActivityEvent {
+  id: string
+  at: string
+  actor: ActivityActor
+  action: string
+  group: ActivityGroup
+  icon: string
+  title: string
+  summary: string
+  entity_type: string | null
+  entity_id: string | null
+}
+
+export interface ActivityPage {
+  events: ActivityEvent[]
+  has_more: boolean
+}
+
+export interface MemberStats {
+  user_id: string
+  username: string | null
+  first_name: string | null
+  role: Role
+  joined_at: string | null
+  operations: number
+  items_added: number
+  listed: number
+  shipped: number
+  discounts: number
+  last_action_at: string | null
+}
+
+export interface PendingInvite {
+  id: string
+  username: string
+  role: Role
+  status: string
+  created_at: string
+}
+
+export interface TeamOverview {
+  days: number
+  members: MemberStats[]
+  invites: PendingInvite[]
+}

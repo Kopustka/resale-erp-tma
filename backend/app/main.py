@@ -14,6 +14,7 @@ from sqlalchemy import text
 from .config import get_settings
 from .db import Base, engine
 from .routers import (
+    admin,
     analytics,
     channels,
     discounts,
@@ -191,3 +192,4 @@ app.include_router(channels.router)
 app.include_router(discounts.router)
 app.include_router(drops.router)
 app.include_router(posts.router)
+app.include_router(admin.router)

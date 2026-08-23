@@ -33,6 +33,7 @@ from ..schemas import (
     TemplatePlaceholder,
 )
 from ..services import discounts as discounts_svc
+from ..services import audit
 from ..services import fx, telegram_post
 from ..services.post_template import TemplateError as PostTemplateError
 
@@ -126,6 +127,13 @@ async def set_settings(
         await session.execute(select(Store).where(Store.id == member.store_id))
     ).scalar_one()
     store.base_currency = cur
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.SETTINGS_EDIT,
+        summary=f"базовая валюта → {cur}",
+    )
     await session.commit()
     return StoreSettings(base_currency=cur)
 
@@ -341,6 +349,13 @@ async def invite_member(
             status=InviteStatus.ACCEPTED,
         )
         session.add(inv)
+        audit.record(
+            session,
+            store_id=member.store_id,
+            user_id=user.id,
+            action=audit.MEMBER_INVITE,
+            summary=f"@{uname} · {payload.role.value} · подключён сразу",
+        )
         await session.commit()
         await session.refresh(inv)
         return InviteOut.model_validate(inv)
@@ -366,6 +381,13 @@ async def invite_member(
         status=InviteStatus.PENDING,
     )
     session.add(inv)
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=user.id,
+        action=audit.MEMBER_INVITE,
+        summary=f"@{uname} · {payload.role.value} · ждёт первого /start",
+    )
     await session.commit()
     await session.refresh(inv)
     return InviteOut.model_validate(inv)
@@ -388,4 +410,11 @@ async def revoke_invite(
     if inv is None:
         raise HTTPException(404, "Invite not found")
     inv.status = InviteStatus.REVOKED
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.MEMBER_REVOKE,
+        summary=f"@{inv.username}",
+    )
     await session.commit()

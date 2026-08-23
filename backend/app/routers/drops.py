@@ -12,6 +12,7 @@ from ..db import get_session
 from ..models import Channel, Drop, DropItem, Item, JobKind, StoreMember
 from ..schemas import DropCreate, DropOut
 from ..services import post_queue
+from ..services import audit
 from ..services.drops import MAX_ITEMS
 
 router = APIRouter(prefix="/api/v1/drops", tags=["drops"])
@@ -81,6 +82,15 @@ async def create_drop(
             channel_uid=ch.id,
             drop_id=drop.id,
         )
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.DROP_CREATE,
+        summary=(drop.title or "Без названия") + f" · {len(ids)} вещей",
+        entity_type="drop",
+        entity_id=drop.id,
+    )
     await session.commit()
 
     return DropOut(

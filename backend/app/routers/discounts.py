@@ -23,6 +23,7 @@ from ..models import (
 )
 from ..schemas import DiscountCreate, DiscountOut
 from ..services import discounts as svc
+from ..services import audit
 from ..services import fx
 
 router = APIRouter(prefix="/api/v1/discounts", tags=["discounts"])
@@ -145,6 +146,17 @@ async def create_discount(
         item.price_before_discount = Decimal(old)
         item.list_price_orig = new
         item.list_price = await fx.convert(new, currency, (base or "BYN"))
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=user.id,
+        action=audit.DISCOUNT_CREATE,
+        summary=f"{item.sku or ''} {item.title or ''}".strip()
+        + f" · {svc._fmt(Decimal(old))} → {svc._fmt(new)} {currency}"
+        + ("" if when is None else " (по расписанию)"),
+        entity_type="discount",
+        entity_id=discount.id,
+    )
     await session.commit()
     await session.refresh(discount)
 
@@ -174,6 +186,15 @@ async def cancel_discount(
         raise HTTPException(409, "Скидка уже объявлена — отменить нельзя")
 
     d.status = DiscountStatus.CANCELLED
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.DISCOUNT_CANCEL,
+        summary=f"{svc._fmt(d.old_price)} → {svc._fmt(d.new_price)} {d.currency}",
+        entity_type="discount",
+        entity_id=d.id,
+    )
     await session.execute(
         update(PostJob)
         .where(

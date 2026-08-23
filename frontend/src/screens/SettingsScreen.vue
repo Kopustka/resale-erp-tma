@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { openCalendar, openChannels, openTemplates } from '@/app/navigation'
+import { openAdmin, openCalendar, openChannels, openTemplates } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
@@ -49,6 +49,11 @@ function goChannels(): void {
 function goTemplates(): void {
   hapticSelection()
   openTemplates()
+}
+
+function goAdmin(): void {
+  hapticSelection()
+  openAdmin()
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -284,6 +289,14 @@ function exportCsv(): void {
       <!-- Команда (только OWNER) -->
       <section v-if="session.isOwner" class="block">
         <h2 class="block-title">Команда</h2>
+
+        <button class="nav-row tap" @click="goAdmin">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Админ-панель</span>
+            <span class="nav-row-sub">Кто что делал: лента действий и статистика</span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">›</span>
+        </button>
 
         <div v-if="session.membersLoading" class="hint">Загрузка участников…</div>
         <div v-else class="members">

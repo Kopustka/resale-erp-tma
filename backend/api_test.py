@@ -3,6 +3,23 @@
 Запуск: DATABASE_URL=... BOT_TOKEN=<любой валидный по формату> python api_test.py
 Требует Postgres + Redis.
 """
+
+# --------------------------------------------------------------------------
+# ВНИМАНИЕ: этот скрипт делает DROP SCHEMA public CASCADE — он стирает БД
+# целиком. Один запуск по DATABASE_URL продакшена уничтожает весь склад.
+# Поэтому по умолчанию он не стартует: нужен явный ALLOW_DESTRUCTIVE_TESTS=1.
+# Запускать только на одноразовой базе, никогда — на боевой.
+# --------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+
+if _os.environ.get("ALLOW_DESTRUCTIVE_TESTS") != "1":
+    _sys.exit(
+        "ОТКАЗ: скрипт стирает базу целиком (DROP SCHEMA).\n"
+        "Запуск только на одноразовой БД: ALLOW_DESTRUCTIVE_TESTS=1 "
+        "DATABASE_URL=<тестовая> python " + _os.path.basename(__file__)
+    )
+
 import asyncio
 import hashlib
 import hmac

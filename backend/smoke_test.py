@@ -4,6 +4,23 @@
 Запуск: BOT_TOKEN=123456789:AA... python smoke_test.py
 Требует поднятый PostgreSQL (DATABASE_URL) — таблицы создаются автоматически.
 """
+
+# --------------------------------------------------------------------------
+# ВНИМАНИЕ: этот скрипт делает DROP SCHEMA public CASCADE — он стирает БД
+# целиком. Один запуск по DATABASE_URL продакшена уничтожает весь склад.
+# Поэтому по умолчанию он не стартует: нужен явный ALLOW_DESTRUCTIVE_TESTS=1.
+# Запускать только на одноразовой базе, никогда — на боевой.
+# --------------------------------------------------------------------------
+import os as _os
+import sys as _sys
+
+if _os.environ.get("ALLOW_DESTRUCTIVE_TESTS") != "1":
+    _sys.exit(
+        "ОТКАЗ: скрипт стирает базу целиком (DROP SCHEMA).\n"
+        "Запуск только на одноразовой БД: ALLOW_DESTRUCTIVE_TESTS=1 "
+        "DATABASE_URL=<тестовая> python " + _os.path.basename(__file__)
+    )
+
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone

@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import (Channel, Item, ItemPost, ItemStatus, ItemStatusLog, PostJob,
+from app.models import (AuditLog, Channel, Item, ItemPost, ItemStatus, ItemStatusLog, PostJob,
                         Role, Store, StoreCounter, StoreMember, User)
 
 s_=get_settings(); TG=999794; ok=bad=0
@@ -107,6 +107,7 @@ async def main():
             await s.execute(delete(StoreMember).where(StoreMember.store_id==sid))
             u=(await s.execute(select(User).where(User.telegram_id==TG))).scalar_one()
             u.current_store_id=None; await s.flush()
+            await s.execute(delete(AuditLog).where(AuditLog.store_id == sid))
             await s.execute(delete(Store).where(Store.id==sid))
             await s.execute(delete(User).where(User.id==u.id)); await s.commit()
         print("\n[cleanup] ok")

@@ -419,3 +419,64 @@ class DiscountTemplateInfo(BaseModel):
     is_default: bool
     preview: str
     placeholders: list[TemplatePlaceholder]
+
+
+# ---------------------------------------------------------------- админка
+
+
+class ActivityActor(BaseModel):
+    user_id: uuid.UUID | None = None
+    username: str | None = None
+    first_name: str | None = None
+    role: Role | None = None
+
+
+class ActivityEvent(BaseModel):
+    """Одно событие ленты: и из журнала действий, и из истории статусов."""
+
+    id: str
+    at: datetime
+    actor: ActivityActor
+    action: str
+    group: str
+    icon: str
+    title: str
+    summary: str = ""
+    entity_type: str | None = None
+    entity_id: uuid.UUID | None = None
+
+
+class ActivityPage(BaseModel):
+    events: list[ActivityEvent]
+    has_more: bool
+
+
+class MemberStats(BaseModel):
+    """Сводка по участнику за выбранный период."""
+
+    user_id: uuid.UUID
+    username: str | None = None
+    first_name: str | None = None
+    role: Role
+    joined_at: datetime | None = None
+    operations: int = 0
+    items_added: int = 0
+    listed: int = 0
+    shipped: int = 0
+    discounts: int = 0
+    last_action_at: datetime | None = None
+
+
+class PendingInvite(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    username: str
+    role: Role
+    status: str
+    created_at: datetime
+
+
+class TeamOverview(BaseModel):
+    days: int
+    members: list[MemberStats]
+    invites: list[PendingInvite]

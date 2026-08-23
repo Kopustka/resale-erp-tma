@@ -42,6 +42,7 @@ from ..schemas import (
 from ..services import (
     ai_voice,
     audio,
+    audit,
     fx,
     idempotency,
     post_queue,
@@ -382,6 +383,19 @@ async def edit_item(
     price_before = item.list_price_orig
     if data:
         await repo.update_fields(item, data)
+        # Поля берём из исходного payload, а не из data: деньги там уже
+        # раскрыты в пары *_orig/*_base, и владелец увидел бы в журнале
+        # «cost_price_base», хотя сотрудник правил «закупку».
+        touched = ", ".join(sorted(payload.model_dump(exclude_unset=True)))
+        audit.record(
+            session,
+            store_id=member.store_id,
+            user_id=member.user_id,
+            action=audit.ITEM_EDIT,
+            summary=f"{item.sku or ''} {item.title or ''}".strip() + f" · {touched}",
+            entity_type="item",
+            entity_id=item.id,
+        )
         await session.commit()
     fresh = await repo.get(member.store_id, item_id, include_archived=True)
 
@@ -409,6 +423,15 @@ async def restore_item(
         raise HTTPException(404, "Item not found")
     if item.archived_at is not None:
         await repo.restore(item)
+        audit.record(
+            session,
+            store_id=member.store_id,
+            user_id=member.user_id,
+            action=audit.ITEM_RESTORE,
+            summary=f"{item.sku or ''} {item.title or ''}".strip(),
+            entity_type="item",
+            entity_id=item.id,
+        )
         await session.commit()
     fresh = await repo.get(member.store_id, item_id, include_archived=True)
     return to_out(fresh, show_finance=_can_see_finance(member))
@@ -447,6 +470,16 @@ async def create_item(
         **money_kwargs,
     )
     session.add(item)
+    await session.flush()  # нужен item.id для ссылки в журнале
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=user.id,
+        action=audit.ITEM_CREATE,
+        summary=f"{sku} {item.title or ''}".strip(),
+        entity_type="item",
+        entity_id=item.id,
+    )
     await session.commit()
     await session.refresh(item)
 
@@ -917,6 +950,18 @@ async def delete_item(
     item = await repo.get(member.store_id, item_id, include_archived=True)
     if item is None:
         raise HTTPException(404, "Item not found")
+    # Подпись собираем до удаления: после hard_delete у объекта не остаётся
+    # ни артикула, ни названия, и в журнале был бы безымянный «удалил вещь».
+    label = f"{item.sku or ''} {item.title or ''}".strip()
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.ITEM_DELETE,
+        summary=label + (" · безвозвратно" if hard else " · в архив"),
+        entity_type="item",
+        entity_id=None if hard else item.id,
+    )
     if hard:
         await repo.hard_delete(item)
     else:

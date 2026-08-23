@@ -21,7 +21,7 @@ from ..models import (
     User,
 )
 from ..schemas import CustomPostCreate, CustomPostOut
-from ..services import post_queue
+from ..services import audit, post_queue
 
 router = APIRouter(prefix="/api/v1/posts", tags=["posts"])
 
@@ -105,6 +105,15 @@ async def create_post(
             custom_post_id=post.id,
             run_at=when,
         )
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=user.id,
+        action=audit.POST_CREATE,
+        summary=(payload.body or "")[:80] + ("" if when is None else " (по расписанию)"),
+        entity_type="post",
+        entity_id=post.id,
+    )
     await session.commit()
     await session.refresh(post)
     return _out(post)
@@ -131,6 +140,15 @@ async def cancel_post(
         raise HTTPException(409, "Пост уже опубликован — отменить нельзя")
 
     post.status = CustomPostStatus.CANCELLED
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.POST_CANCEL,
+        summary=(post.body or "")[:80],
+        entity_type="post",
+        entity_id=post.id,
+    )
     await session.execute(
         update(PostJob)
         .where(

@@ -12,6 +12,7 @@ from ..db import get_session
 from ..models import Channel, ItemPost, StoreMember
 from ..schemas import ChannelCreate, ChannelOut, ChannelUpdateOne
 from ..services import telegram_post
+from ..services import audit
 
 router = APIRouter(prefix="/api/v1/channels", tags=["channels"])
 
@@ -112,6 +113,16 @@ async def create_channel(
         enabled=True,
     )
     session.add(ch)
+    await session.flush()
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.CHANNEL_ADD,
+        summary=ch.title or ch.chat_id,
+        entity_type="channel",
+        entity_id=ch.id,
+    )
     await session.commit()
     await session.refresh(ch)
     return _out(ch, 0)
@@ -132,6 +143,15 @@ async def update_channel(
         ch.signature = payload.signature.strip() or None
     if payload.enabled is not None:
         ch.enabled = payload.enabled
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.CHANNEL_EDIT,
+        summary=ch.title or ch.chat_id,
+        entity_type="channel",
+        entity_id=ch.id,
+    )
     await session.commit()
     await session.refresh(ch)
     counts = await _counts(session, [ch.id])
@@ -148,6 +168,15 @@ async def delete_channel(
     ch = await _owned(session, member.store_id, channel_id)
     # Записи о постах удаляем вместе с каналом: без канала они бессмысленны,
     # а внешний ключ иначе не даст удалить.
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=member.user_id,
+        action=audit.CHANNEL_DELETE,
+        summary=ch.title or ch.chat_id,
+        entity_type="channel",
+        entity_id=None,
+    )
     await session.execute(ItemPost.__table__.delete().where(ItemPost.channel_id == ch.id))
     await session.delete(ch)
     await session.commit()

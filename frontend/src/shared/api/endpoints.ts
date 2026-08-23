@@ -1,6 +1,7 @@
 /** Типизированные вызовы эндпоинтов. Пути — строго по контракту. */
 import { http, uploadFile } from './http'
 import type {
+  ActivityPage,
   AiDescribeResult,
   AnalyticsSummary,
   CaptureSession,
@@ -24,6 +25,7 @@ import type {
   MemberOut,
   PostTemplate,
   Role,
+  TeamOverview,
   StatusPatch,
   StoreOut,
   SwitchStoreResult,
@@ -222,4 +224,24 @@ export const analyticsApi = {
 export function mediaPath(itemId: string, index: number, width?: number): string {
   const base = `${V1}/media/${itemId}/${index}`
   return width ? `${base}?w=${width}` : base
+}
+
+// ------------------------------- Админка ------------------------------- //
+/** Доступно только владельцу склада; остальным сервер отвечает 403. */
+export const adminApi = {
+  activity: (p: {
+    userId?: string | null
+    group?: string | null
+    days?: number
+    limit?: number
+    offset?: number
+  }) =>
+    http.get<ActivityPage>(`${V1}/admin/activity`, {
+      user_id: p.userId ?? undefined,
+      group: p.group ?? undefined,
+      days: p.days ?? undefined,
+      limit: p.limit ?? undefined,
+      offset: p.offset || undefined,
+    }),
+  team: (days = 30) => http.get<TeamOverview>(`${V1}/admin/team`, { days }),
 }

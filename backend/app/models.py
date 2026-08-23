@@ -674,3 +674,37 @@ class Discount(Base):
     __table_args__ = (
         Index("ix_discount_store_when", "store_id", "scheduled_at"),
     )
+
+
+class AuditLog(Base):
+    """Журнал действий участников склада — то, что видит владелец в админке.
+
+    Смены статусов сюда НЕ дублируются: для них есть item_status_logs с
+    историей от первого дня. Лента админки объединяет обе таблицы, поэтому
+    записывать одно и то же дважды не нужно.
+
+    Строка денормализована намеренно: summary складывается в момент действия
+    и переживает удаление вещи. Иначе журнал «кто удалил артикул #1042»
+    после удаления показывал бы пустую ссылку.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(40))
+    entity_type: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
+    summary: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        Index("ix_audit_store_time", "store_id", "created_at"),
+    )
