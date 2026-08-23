@@ -22,7 +22,7 @@ export const STATUS_COLORS: Record<ItemStatus, string> = {
 }
 
 /**
- * Следующий статус по happy-path (свайп вправо). Должен совпадать с
+ * Следующий статус по happy-path (кнопка в строке списка). Должен совпадать с
  * NEXT_STATUS на бэкенде (services/fsm.py).
  */
 export const NEXT_STATUS: Partial<Record<ItemStatus, ItemStatus>> = {

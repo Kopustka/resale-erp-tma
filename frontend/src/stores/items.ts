@@ -14,14 +14,13 @@ import { uuid } from '@/shared/utils/uuid'
 import { useToastStore } from './toast'
 
 const PAGE_LIMIT = 30
-const UNDO_MS = 5000
 
 /** Цепочка запросов по каждой вещи: следующий стартует после предыдущего. */
 const chain = new Map<string, Promise<boolean>>()
 
 /**
  * Сколько шагов по вещи ещё не подтверждено сервером. Нужен, чтобы ответ
- * на первый свайп не затёр статус, который пользователь уже насвайпал
+ * на первый переход не затёр статус, который пользователь уже пролистал
  * дальше.
  */
 const pendingSteps = new Map<string, number>()
@@ -29,12 +28,6 @@ const pendingSteps = new Map<string, number>()
 /** Не чаще одной тихой пересинхронизации в 3 секунды. */
 const REFRESH_THROTTLE_MS = 3000
 let lastRefresh = 0
-
-interface PendingArchive {
-  item: ItemOut
-  index: number
-  timer: number
-}
 
 interface ApplyStatusOptions {
   targetStatus?: ItemStatus
@@ -49,7 +42,6 @@ interface ItemsState {
   loadingMore: boolean
   error: string | null
   filters: ItemFilters
-  pendingArchives: Record<string, PendingArchive>
   viewArchived: boolean
   /** id вещей, у которых прямо сейчас идёт фоновая AI-генерация. */
   aiPending: Record<string, boolean>
@@ -65,7 +57,6 @@ export const useItemsStore = defineStore('items', {
     loadingMore: false,
     error: null,
     filters: { status: null, brand: null, category: null, search: null, ids: null },
-    pendingArchives: {},
     viewArchived: false,
     aiPending: {},
   }),
@@ -146,17 +137,16 @@ export const useItemsStore = defineStore('items', {
     },
 
     /**
-     * Оптимистичная смена статуса (свайп вправо / ручной переход).
-     * Мгновенно меняем в сторе, PATCH с Idempotency-Key + version.
-     * При ошибке/409 — откат к прежнему состоянию и Toast; при 409 перезагружаем айтем.
-     */
-    /**
-     * Меняет статус. Отрисовка мгновенная, сеть — отдельно.
+     * Меняет статус: кнопка в строке списка или переход в карточке товара.
+     * Отрисовка мгновенная, сеть — отдельно.
      *
-     * Раньше запрос ждали до показа результата, и быстрые свайпы выглядели
+     * Раньше запрос ждали до показа результата, и частые нажатия выглядели
      * так, будто не сработали. Теперь статус меняется в списке сразу, а
      * запросы уходят строго по очереди на вещь: каждый следующий берёт
      * версию, которую вернул предыдущий, иначе сервер ответит 409.
+     *
+     * При ошибке состояние не откатывается на локальный снимок, а
+     * перечитывается с сервера — см. sendStatus.
      */
     async applyStatus(item: ItemOut, opts: ApplyStatusOptions = {}): Promise<boolean> {
       const toast = useToastStore()
@@ -165,7 +155,7 @@ export const useItemsStore = defineStore('items', {
       const current = this.items[idx]
 
       // Цель считаем от локального статуса: он уже включает предыдущие
-      // свайпы, ответ по которым ещё не пришёл.
+      // переходы, ответ по которым ещё не пришёл.
       const target = opts.targetStatus ?? nextStatus(current.status)
       if (!target) {
         toast.show({ message: 'Нет следующего статуса', kind: 'info' })
@@ -231,7 +221,7 @@ export const useItemsStore = defineStore('items', {
     },
 
     /**
-     * Кладёт ответ сервера в список, не затирая более свежие свайпы.
+     * Кладёт ответ сервера в список, не затирая более свежие переходы.
      *
      * Пока в очереди есть неотправленные шаги, локальный статус новее
      * ответа: если подставить ответ целиком, карточка прыгнет назад.
@@ -269,7 +259,7 @@ export const useItemsStore = defineStore('items', {
           await this.loadFirst()
           return
         }
-        // Вещи с неподтверждёнными свайпами не трогаем: ответ сервера по
+        // Вещи с неподтверждёнными переходами не трогаем: ответ сервера по
         // ним ещё в пути, и подстановка списка вернула бы старый статус.
         for (const fresh of page.items) {
           if (pendingSteps.has(fresh.id)) continue
@@ -291,54 +281,6 @@ export const useItemsStore = defineStore('items', {
       }
     },
 
-    /**
-     * Архивация (свайп влево) с окном отмены ~5с.
-     * Сразу убираем из списка, реальный DELETE шлём только если не отменили.
-     */
-    archiveWithUndo(item: ItemOut): void {
-      const toast = useToastStore()
-      const index = this.items.findIndex((i) => i.id === item.id)
-      if (index === -1) return
-      const [removed] = this.items.splice(index, 1)
-
-      const timer = window.setTimeout(() => {
-        void this.commitArchive(removed.id)
-      }, UNDO_MS)
-
-      this.pendingArchives[removed.id] = { item: removed, index, timer }
-
-      toast.show({
-        message: `«${removed.sku}» в архив`,
-        kind: 'info',
-        actionLabel: 'Отменить',
-        duration: UNDO_MS,
-        onAction: () => this.undoArchive(removed.id),
-      })
-    },
-
-    undoArchive(id: string): void {
-      const pending = this.pendingArchives[id]
-      if (!pending) return
-      clearTimeout(pending.timer)
-      const insertAt = Math.min(pending.index, this.items.length)
-      this.items.splice(insertAt, 0, pending.item)
-      delete this.pendingArchives[id]
-    },
-
-    async commitArchive(id: string): Promise<void> {
-      const pending = this.pendingArchives[id]
-      if (!pending) return
-      delete this.pendingArchives[id]
-      try {
-        await itemsApi.archive(id)
-      } catch (e) {
-        // Не удалось — возвращаем в список.
-        const insertAt = Math.min(pending.index, this.items.length)
-        this.items.splice(insertAt, 0, pending.item)
-        useToastStore().error(e instanceof Error ? e.message : 'Не удалось архивировать')
-      }
-    },
-
     /** Переключение между активными и архивом. */
     async setArchivedView(v: boolean): Promise<void> {
       if (this.viewArchived === v) return
@@ -355,7 +297,7 @@ export const useItemsStore = defineStore('items', {
       return fresh
     },
 
-    /** Немедленная архивация (из детали, без окна отмены). */
+    /** Архивация из карточки товара. */
     async archiveNow(id: string): Promise<void> {
       await itemsApi.archive(id)
       const at = this.items.findIndex((i) => i.id === id)

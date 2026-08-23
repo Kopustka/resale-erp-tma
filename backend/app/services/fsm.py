@@ -8,7 +8,7 @@ from ..models import ItemStatus
 
 S = ItemStatus
 
-# Матрица переходов: шаг вперёд по цепочке и шаг назад (случайный свайп
+# Матрица переходов: шаг вперёд по цепочке и шаг назад (ошибочное нажатие
 # должен отменяться). Прыжки через этап разрешены только вперёд — из
 # «куплен» сразу в «отфотографирован», если подготовка не нужна.
 ALLOWED_TRANSITIONS: dict[ItemStatus, set[ItemStatus]] = {
@@ -31,7 +31,7 @@ PREV_STATUS: dict[ItemStatus, ItemStatus] = {
 PRE_LISTED = {S.BOUGHT, S.PREPARING, S.PHOTOGRAPHED}
 PRE_SOLD = PRE_LISTED | {S.LISTED}
 
-# «Следующий логический статус» для свайпа вправо.
+# «Следующий логический статус» — то, что предлагает кнопка в списке.
 NEXT_STATUS: dict[ItemStatus, ItemStatus] = {
     S.BOUGHT: S.PREPARING,
     S.PREPARING: S.PHOTOGRAPHED,

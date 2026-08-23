@@ -116,7 +116,7 @@ class ItemPage(BaseModel):
 
 
 class StatusPatch(BaseModel):
-    """Запрос смены статуса при свайпе."""
+    """Запрос смены статуса."""
 
     target_status: ItemStatus | None = None  # None -> следующий по happy path
     version: int  # ожидаемая версия (optimistic lock)

@@ -98,7 +98,7 @@ function resetFilters(): void {
   void items.resetFilters()
 }
 
-// --------------------------- Свайп-переходы --------------------------- //
+// --------------------------- Смена статуса --------------------------- //
 const priceOpen = ref(false)
 const priceItem = ref<ItemOut | null>(null)
 
@@ -143,11 +143,6 @@ async function onConfirmPrice(price: number, currency: Currency): Promise<void> 
   })
   if (ok) hapticNotify('success')
   priceItem.value = null
-}
-
-function onArchive(item: ItemOut): void {
-  hapticImpact('medium')
-  items.archiveWithUndo(item)
 }
 
 function onOpen(item: ItemOut): void {
@@ -283,10 +278,9 @@ onBeforeUnmount(() => {
           <ItemCard
             :item="row.data"
             :show-finance="session.canSeeFinance"
-            :swipeable="!items.viewArchived"
+            :actionable="!items.viewArchived"
             :generating="!!items.aiPending[row.data.id]"
             @next="onNext(row.data)"
-            @archive="onArchive(row.data)"
             @open="onOpen(row.data)"
           />
         </div>

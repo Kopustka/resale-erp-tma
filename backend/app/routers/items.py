@@ -1,4 +1,4 @@
-"""Роутер товаров: список (cursor), создание, свайп-статус, архив, подсказки."""
+"""Роутер товаров: список (cursor), создание, смена статуса, архив, подсказки."""
 from __future__ import annotations
 
 import asyncio
@@ -527,7 +527,7 @@ async def _bg_generate_description(
     if not values:
         return
     # Версию НЕ трогаем: правка текстовых полей не должна ломать
-    # optimistic lock параллельного свайпа.
+    # optimistic lock параллельного перехода.
     async with SessionLocal() as s:
         await s.execute(
             update(Item)
@@ -753,7 +753,7 @@ async def _enqueue_publish(
     )
     photos = list(item.photo_file_ids or [])
     # Отправка уходит в фон: внутри запроса она грузила фото в Telegram и
-    # свайп в интерфейсе залипал на несколько секунд.
+    # интерфейс залипал на несколько секунд.
     asyncio.create_task(
         _bg_send_preview(
             actor.telegram_id,

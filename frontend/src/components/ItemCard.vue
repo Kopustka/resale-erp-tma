@@ -1,60 +1,39 @@
 <script setup lang="ts">
 /**
- * Карточка товара со свайпами:
- *  - вправо  -> следующий статус (emit 'next')
- *  - влево   -> архивация (emit 'archive')
- *  - тап     -> деталь (emit 'open')
+ * Строка товара в списке.
  *
- * Механика жеста:
- *  - ось определяется с угловым перевесом (горизонталь должна явно доминировать);
- *  - как только ось = X, вертикальный скролл страницы БЛОКИРУЕТСЯ
- *    (touchmove preventDefault, passive: false) до конца жеста;
- *  - за порогом срабатывания движение «тяжелеет» (резина), чтобы карточка
- *    не улетала за палец;
- *  - пересечение порога подсвечивает фон и даёт лёгкий haptic-тик;
- *  - transition выключен только пока палец на экране — завершение всегда плавное.
+ * Свайпов здесь нет намеренно. Жест был неочевиден (о нём нужно догадаться),
+ * конфликтовал с вертикальной прокруткой и срабатывал вхолостую при быстром
+ * пролистывании. Вместо него — явная кнопка перехода в следующий статус:
+ * видно, что произойдёт, до нажатия, и промахнуться мимо неё нельзя.
+ *
+ * Архивация уехала в карточку товара: в строке ей не место, если жестов нет,
+ * а второй кнопкой рядом со статусом легко попасть по ошибке.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed } from 'vue'
 import type { ItemOut } from '@/shared/api/types'
 import AuthImage from '@/shared/ui/AuthImage.vue'
 import StatusBadge from '@/shared/ui/StatusBadge.vue'
 import Money from '@/shared/ui/Money.vue'
 import { isSoldLike, nextStatus, STATUS_LABELS } from '@/shared/utils/status'
-import { hapticSelection } from '@/shared/telegram/webapp'
 
 const props = withDefaults(
   defineProps<{
     item: ItemOut
     showFinance: boolean
-    swipeable?: boolean
+    /** В архиве статусы не двигаем — кнопку прячем. */
+    actionable?: boolean
     /** Идёт фоновая AI-генерация названия/описания. */
     generating?: boolean
   }>(),
-  { swipeable: true, generating: false },
+  { actionable: true, generating: false },
 )
-const emit = defineEmits<{ next: []; archive: []; open: [] }>()
-
-const THRESHOLD = 84
-const MAX_LEFT = 150 // дальше влево карточку не тянем (до подтверждения)
-const OVERDRAG = 0.35 // «вязкость» после порога
-
-const dx = ref(0)
-const dragging = ref(false)
-const removing = ref(false)
-
-let startX = 0
-let startY = 0
-let axis: 'none' | 'x' | 'y' = 'none'
-let pointerId: number | null = null
-let didDrag = false // был горизонтальный жест — подавить click
-let armed: 'none' | 'next' | 'archive' = 'none'
+const emit = defineEmits<{ next: []; open: [] }>()
 
 const soldLike = computed(() => isSoldLike(props.item.status))
-const hasNext = computed(() => nextStatus(props.item.status) !== null)
-const nextLabel = computed(() => {
-  const n = nextStatus(props.item.status)
-  return n ? STATUS_LABELS[n] : ''
-})
+const next = computed(() => nextStatus(props.item.status))
+const nextLabel = computed(() => (next.value ? STATUS_LABELS[next.value] : ''))
+const showStep = computed(() => props.actionable && next.value !== null)
 
 // Цена показывается в базовой валюте склада (сведённая):
 // продано -> фактическая продажа; иначе -> цена объявления или себестоимость.
@@ -71,139 +50,19 @@ const oldPriceValue = computed<number | null>(() =>
     : null,
 )
 
-/** Прогресс жеста 0..1 к порогу — для плавной подсветки фона-действия. */
-const progressRight = computed(() => Math.min(1, Math.max(0, dx.value) / THRESHOLD))
-const progressLeft = computed(() => Math.min(1, Math.max(0, -dx.value) / THRESHOLD))
-
-// --- Блокировка скролла страницы во время горизонтального жеста --- //
-function blockScroll(e: TouchEvent): void {
-  if (axis === 'x') e.preventDefault()
+/**
+ * Нажатие на кнопку не должно открывать карточку: цель разная, а кнопка
+ * лежит внутри кликабельной строки.
+ */
+function onStep(e: Event): void {
+  e.stopPropagation()
+  emit('next')
 }
-function attachScrollLock(): void {
-  window.addEventListener('touchmove', blockScroll, { passive: false })
-}
-function detachScrollLock(): void {
-  window.removeEventListener('touchmove', blockScroll)
-}
-
-function applyResistance(raw: number): number {
-  // До порога — 1:1 за пальцем; после — движение «вязнет».
-  const abs = Math.abs(raw)
-  if (abs <= THRESHOLD) return raw
-  const over = abs - THRESHOLD
-  return Math.sign(raw) * (THRESHOLD + over * OVERDRAG)
-}
-
-function setArmed(next: 'none' | 'next' | 'archive'): void {
-  if (armed !== next) {
-    armed = next
-    if (next !== 'none') hapticSelection() // тик при пересечении порога
-  }
-}
-
-function onDown(e: PointerEvent): void {
-  if (!props.swipeable || removing.value) return
-  startX = e.clientX
-  startY = e.clientY
-  axis = 'none'
-  didDrag = false
-  armed = 'none'
-  pointerId = e.pointerId
-  attachScrollLock()
-}
-
-function onMove(e: PointerEvent): void {
-  if (pointerId !== e.pointerId) return
-  const ddx = e.clientX - startX
-  const ddy = e.clientY - startY
-
-  if (axis === 'none') {
-    if (Math.abs(ddx) < 10 && Math.abs(ddy) < 10) return
-    // Горизонталь должна явно доминировать (в 1.3 раза), иначе отдаём вертикали.
-    axis = Math.abs(ddx) > Math.abs(ddy) * 1.3 ? 'x' : 'y'
-    if (axis === 'x') {
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-      dragging.value = true
-      didDrag = true
-    }
-  }
-  if (axis !== 'x') return
-
-  let val = applyResistance(ddx)
-  if (val > 0 && !hasNext.value) val = Math.min(val * 0.2, 28) // нет следующего статуса — тугая резина
-  if (val < 0) val = Math.max(val, -MAX_LEFT)
-  dx.value = val
-
-  if (val > THRESHOLD && hasNext.value) setArmed('next')
-  else if (val < -THRESHOLD) setArmed('archive')
-  else setArmed('none')
-}
-
-function finishGesture(e: PointerEvent): void {
-  if (pointerId !== e.pointerId) return
-  pointerId = null
-  detachScrollLock()
-  const wasX = axis === 'x'
-  axis = 'none'
-  dragging.value = false
-  if (!wasX) {
-    dx.value = 0
-    return
-  }
-  const val = dx.value
-  if (val > THRESHOLD && hasNext.value) {
-    dx.value = 0 // плавно пружинит, бейдж статуса обновится рядом
-    emit('next')
-  } else if (val < -THRESHOLD) {
-    removing.value = true
-    dx.value = -Math.max(320, (e.currentTarget as HTMLElement).offsetWidth)
-    window.setTimeout(() => emit('archive'), 190)
-  } else {
-    dx.value = 0
-  }
-}
-
-function onCancel(e: PointerEvent): void {
-  if (pointerId !== e.pointerId) return
-  pointerId = null
-  detachScrollLock()
-  axis = 'none'
-  dragging.value = false
-  if (!removing.value) dx.value = 0
-}
-
-function onClick(): void {
-  if (!didDrag && Math.abs(dx.value) < 4) emit('open')
-}
-
-onBeforeUnmount(detachScrollLock)
 </script>
 
 <template>
   <div class="card-wrap">
-    <!-- Фоновые действия: прозрачность растёт с прогрессом жеста -->
-    <div class="action action-next" :class="{ armed: progressRight >= 1 }" :style="{ opacity: progressRight }">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="m9 6 6 6-6 6" stroke="currentColor" /></svg>
-      <span class="action-label">{{ hasNext ? nextLabel : '—' }}</span>
-    </div>
-    <div class="action action-archive" :class="{ armed: progressLeft >= 1 }" :style="{ opacity: progressLeft }">
-      <span class="action-label">В архив</span>
-      <svg viewBox="0 0 24 24" width="20" height="20">
-        <path fill="currentColor" d="M3 4h18v4H3V4zm2 6h14l-1 10H6L5 10zm4 2v6h2v-6H9zm4 0v6h2v-6h-2z" />
-      </svg>
-    </div>
-
-    <!-- Передний план -->
-    <div
-      class="card"
-      :class="{ dragging, removing }"
-      :style="{ transform: `translateX(${dx}px)` }"
-      @pointerdown="onDown"
-      @pointermove="onMove"
-      @pointerup="finishGesture"
-      @pointercancel="onCancel"
-      @click="onClick"
-    >
+    <div class="card" @click="emit('open')">
       <div class="photo">
         <AuthImage
           :item-id="item.id"
@@ -224,9 +83,24 @@ onBeforeUnmount(detachScrollLock)
         <div v-else class="cat hint">
           {{ item.brand }} · {{ item.category }}<span v-if="item.size"> · {{ item.size }}</span>
         </div>
-        <div v-if="showFinance" class="price-row">
-          <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
-          <Money :value="priceValue" :colored="soldLike" strong />
+
+        <div class="bottom-row">
+          <button
+            v-if="showStep"
+            class="step tap"
+            :aria-label="`Перевести в «${nextLabel}»`"
+            @click="onStep"
+          >
+            <span class="step-now">{{ STATUS_LABELS[item.status] }}</span>
+            <span class="step-arrow" aria-hidden="true">→</span>
+            <span class="step-next">{{ nextLabel }}</span>
+          </button>
+          <span v-else class="step-empty"></span>
+
+          <span v-if="showFinance" class="price-row">
+            <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
+            <Money :value="priceValue" :colored="soldLike" strong />
+          </span>
         </div>
       </div>
     </div>
@@ -240,49 +114,15 @@ onBeforeUnmount(detachScrollLock)
   overflow: hidden;
   background: var(--tg-theme-secondary-bg-color);
 }
-.action {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 20px;
-  font-weight: 700;
-  font-size: 13px;
-  color: #fff;
-  opacity: 0;
-}
-.action.armed .action-label {
-  transform: scale(1.06);
-}
-.action-label {
-  transition: transform 0.12s ease;
-}
-.action-next {
-  justify-content: flex-start;
-  background: var(--accent-positive);
-}
-.action-archive {
-  justify-content: flex-end;
-  background: var(--tg-theme-destructive-text-color);
-}
-
 .card {
   position: relative;
   display: flex;
   gap: 12px;
   padding: 12px;
   background: var(--tg-theme-bg-color);
-  touch-action: pan-y;
-  will-change: transform;
   height: 112px;
   user-select: none;
   -webkit-user-select: none;
-  /* Плавно по умолчанию; во время активного перетаскивания transition отключаем. */
-  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.card.dragging {
-  transition: none;
 }
 .photo {
   flex: none;
@@ -296,13 +136,13 @@ onBeforeUnmount(detachScrollLock)
   display: flex;
   flex-direction: column;
   gap: 3px;
-  pointer-events: none;
 }
 .row-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  pointer-events: none;
 }
 .sku {
   font-size: 12px;
@@ -315,16 +155,78 @@ onBeforeUnmount(detachScrollLock)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
 }
 .cat {
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.bottom-row {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+/*
+ * Кнопка узкая по содержимому и с увеличенной областью нажатия по вертикали:
+ * строка невысокая, а палец на телефоне толще подписи.
+ */
+.step {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  margin: -3px 0;
+  border-radius: 999px;
+  background: var(--tg-theme-secondary-bg-color);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.step:active {
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+}
+.step-now {
+  color: var(--tg-theme-hint-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step:active .step-now {
+  color: inherit;
+  opacity: 0.75;
+}
+.step-arrow {
+  color: var(--tg-theme-hint-color);
+  flex: none;
+}
+.step:active .step-arrow {
+  color: inherit;
+}
+.step-next {
+  color: var(--tg-theme-link-color);
+  flex: none;
+}
+.step:active .step-next {
+  color: inherit;
+}
+.step-empty {
+  flex: 1;
 }
 .price-row {
-  margin-top: auto;
+  flex: none;
   font-size: 16px;
+  pointer-events: none;
 }
 /* Индикатор фоновой AI-генерации: мягкое «дыхание» текста. */
 .gen-shimmer {
