@@ -227,7 +227,9 @@ class Item(Base):
     category: Mapped[str] = mapped_column(String(60))
     size: Mapped[str | None] = mapped_column(String(20))
     color: Mapped[str | None] = mapped_column(String(40))
-    condition: Mapped[str | None] = mapped_column(String(8))  # "8/10"
+    # Не только "8/10": люди пишут словами — «Идеальное», «Как новое».
+    # Восьми символов на это не хватало, и запись падала с 500.
+    condition: Mapped[str | None] = mapped_column(String(32))
     # Замеры, см (стандарт ресейла: длина, ширина pit-to-pit, рукав)
     length_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)
     width_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 1), nullable=True)

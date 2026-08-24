@@ -7,6 +7,7 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -53,6 +54,8 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE item_posts ADD COLUMN IF NOT EXISTS discussion_message_id BIGINT",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS discount_template TEXT",
+    # Состояние вещи писали словами, а колонка была рассчитана на "8/10".
+    "ALTER TABLE items ALTER COLUMN condition TYPE VARCHAR(32)",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые
@@ -174,6 +177,69 @@ async def unhandled(request: Request, exc: Exception):
             "code": "internal_error",
             "message": "Внутренняя ошибка сервера",
             "details": {"trace_id": trace_id},
+        },
+    )
+
+
+# Как называть поля в сообщении об ошибке. Ключ — имя в теле запроса.
+_FIELD_LABELS = {
+    "title": "Название",
+    "brand": "Бренд",
+    "category": "Категория",
+    "size": "Размер",
+    "color": "Цвет",
+    "condition": "Состояние",
+    "description": "Описание",
+    "purchase_location": "Место покупки",
+    "sales_platform": "Площадка",
+    "ad_url": "Ссылка на объявление",
+    "cost_price": "Закупка",
+    "list_price": "Цена",
+    "selling_price": "Цена продажи",
+    "new_price": "Цена со скидкой",
+    "body": "Текст поста",
+    "name": "Название",
+    "username": "Юзернейм",
+}
+
+
+def _validation_message(exc: RequestValidationError) -> str:
+    """Первую ошибку — словами, а не списком объектов pydantic.
+
+    По умолчанию FastAPI отдаёт detail массивом словарей, клиент показывает
+    его как JSON. Человеку нужно знать, какое поле сократить.
+    """
+    errors = exc.errors()
+    if not errors:
+        return "Проверьте заполненные поля"
+    err = errors[0]
+    loc = [str(x) for x in err.get("loc", []) if x not in ("body", "query", "path")]
+    field = loc[-1] if loc else ""
+    label = _FIELD_LABELS.get(field, field or "Поле")
+    kind = err.get("type", "")
+    ctx = err.get("ctx") or {}
+
+    if kind == "string_too_long":
+        return f"«{label}»: не больше {ctx.get('max_length')} символов"
+    if kind == "string_too_short":
+        return f"«{label}»: слишком короткое значение"
+    if kind == "missing":
+        return f"«{label}»: обязательное поле"
+    if kind.startswith("greater_than") or kind.startswith("less_than"):
+        return f"«{label}»: недопустимое значение"
+    if kind in ("int_parsing", "decimal_parsing", "float_parsing"):
+        return f"«{label}»: ожидается число"
+    return f"«{label}»: {err.get('msg', 'некорректное значение')}"
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "validation_error",
+            "message": _validation_message(exc),
+            "details": None,
         },
     )
 

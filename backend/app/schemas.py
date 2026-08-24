@@ -14,20 +14,24 @@ from .models import ItemStatus, Role
 class ItemBase(BaseModel):
     # Пустое название допустимо: при наличии фото его сгенерирует AI,
     # иначе подставится "бренд категория".
+    # Пределы совпадают с шириной колонок в models.Item. Без них слишком
+    # длинное значение доходило до базы и падало там StringDataRightTruncation
+    # — пользователь видел «внутреннюю ошибку сервера» вместо подсказки,
+    # какое поле сократить.
     title: str = Field("", max_length=100)
     brand: str = Field(..., max_length=80)
     category: str = Field(..., max_length=60)
-    size: str | None = None
-    color: str | None = None
-    condition: str | None = None
+    size: str | None = Field(None, max_length=20)
+    color: str | None = Field(None, max_length=40)
+    condition: str | None = Field(None, max_length=32)
     # Замеры, см
     length_cm: Decimal | None = None
     width_cm: Decimal | None = None
     sleeve_cm: Decimal | None = None
     description: str | None = None
-    purchase_location: str | None = None
-    sales_platform: str | None = None
-    ad_url: str | None = None
+    purchase_location: str | None = Field(None, max_length=120)
+    sales_platform: str | None = Field(None, max_length=40)
+    ad_url: str | None = Field(None, max_length=300)
 
 
 class ItemCreate(ItemBase):
@@ -43,26 +47,29 @@ class ItemCreate(ItemBase):
 
 
 class ItemUpdate(BaseModel):
-    title: str | None = None
-    brand: str | None = None
-    category: str | None = None
-    size: str | None = None
-    color: str | None = None
-    condition: str | None = None
+    # Те же пределы, что при создании: правка длинным значением роняла
+    # запрос ровно так же.
+    title: str | None = Field(None, max_length=100)
+    brand: str | None = Field(None, max_length=80)
+    category: str | None = Field(None, max_length=60)
+    size: str | None = Field(None, max_length=20)
+    color: str | None = Field(None, max_length=40)
+    condition: str | None = Field(None, max_length=32)
     length_cm: Decimal | None = None
     width_cm: Decimal | None = None
     sleeve_cm: Decimal | None = None
     description: str | None = None
+    purchase_location: str | None = Field(None, max_length=120)
     cost_price: Decimal | None = None
     restore_cost: Decimal | None = None
     delivery_cost: Decimal | None = None
     platform_fee: Decimal | None = None
     selling_price: Decimal | None = None
     list_price: Decimal | None = None
-    cost_currency: str | None = None
-    price_currency: str | None = None
-    sales_platform: str | None = None
-    ad_url: str | None = None
+    cost_currency: str | None = Field(None, max_length=3)
+    price_currency: str | None = Field(None, max_length=3)
+    sales_platform: str | None = Field(None, max_length=40)
+    ad_url: str | None = Field(None, max_length=300)
 
 
 class ItemOut(BaseModel):
