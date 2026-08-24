@@ -41,6 +41,10 @@ class GeminiQuotaExceeded(GeminiUnavailable):
 # вызов сначала впустую бьётся в основную модель и добавляет секунды
 # ожидания на ровном месте.
 QUOTA_MEMO_SECONDS = 600
+# То же для перегрузки («high demand»), но ненадолго: она проходит сама.
+# Без этой памяти каждый запрос заново тратил ~20 секунд на три попытки к
+# лежащей модели, и ответ не успевал вернуться до таймаута nginx.
+BUSY_MEMO_SECONDS = 120
 _quota_out: dict[str, float] = {}
 
 
@@ -54,8 +58,8 @@ def _is_out(model: str) -> bool:
     return True
 
 
-def _mark_out(model: str) -> None:
-    _quota_out[model] = time.monotonic() + QUOTA_MEMO_SECONDS
+def _mark_out(model: str, seconds: float = QUOTA_MEMO_SECONDS) -> None:
+    _quota_out[model] = time.monotonic() + seconds
 
 
 def _models() -> list[str]:
@@ -68,6 +72,19 @@ def _models() -> list[str]:
     # вдруг лимит уже сбросился раньше, чем истёк наш запомненный срок.
     fresh = [m for m in candidates if not _is_out(m)]
     return fresh or candidates
+
+
+def _error_text(r: httpx.Response) -> str:
+    """Текст ошибки от Google.
+
+    Раньше наружу уходило только «HTTP 400», и по журналу нельзя было
+    понять, что именно не понравилось: снятая модель, размер картинки или
+    ключ. Теперь причина видна сразу.
+    """
+    try:
+        return str(r.json().get("error", {}).get("message", ""))[:200]
+    except Exception:  # noqa: BLE001
+        return r.text[:200]
 
 
 async def _post(model: str, body: dict, timeout: int) -> httpx.Response:
@@ -142,14 +159,21 @@ async def call_json(
                 log.warning("квота исчерпана у %s, пробуем запасную", model)
                 break
 
-            if r.status_code in TRANSIENT and attempt < attempts - 1:
-                last = f"HTTP {r.status_code}"
-                if deadline - time.monotonic() <= 2:
-                    break
-                await asyncio.sleep(0.8 * (attempt + 1))
-                continue
+            detail = _error_text(r)
+            if r.status_code in TRANSIENT:
+                last = f"HTTP {r.status_code}: {detail}"
+                if attempt < attempts - 1 and deadline - time.monotonic() > 2:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+                    continue
+                # Попытки исчерпаны — модель действительно занята. Метим её,
+                # чтобы следующий запрос сразу шёл на запасную.
+                _mark_out(model, BUSY_MEMO_SECONDS)
+                log.warning("%s перегружена (%s), уходим на запасную", model, detail)
+                break
 
-            last = f"HTTP {r.status_code}"
+            # 400/404 повторять бессмысленно: это про сам запрос или модель.
+            last = f"HTTP {r.status_code}: {detail}"
+            log.warning("%s отказала: HTTP %s %s", model, r.status_code, detail)
             break
 
     if quota_hit:

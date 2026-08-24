@@ -84,6 +84,10 @@ def _build_hints(fields: dict[str, str | None]) -> str:
     )
 
 
+#: Секунд на всё про всё, включая повторы и запасную модель.
+DESCRIBE_BUDGET = 25
+
+
 async def generate_item_description(
     photo_entries: list[str], fields: dict[str, str | None]
 ) -> dict[str, str]:
@@ -111,7 +115,11 @@ async def generate_item_description(
     # модель при исчерпанной квоте. Раньше здесь была своя копия логики,
     # и генерация падала на первом же 503.
     try:
-        parsed = await gemini.call_json(parts, timeout=45, temperature=0.7)
+        # Бюджет заведомо меньше proxy_read_timeout nginx: иначе клиент
+        # получал 504 от прокси вместо внятного отказа от нас.
+        parsed = await gemini.call_json(
+            parts, timeout=25, temperature=0.7, budget=DESCRIBE_BUDGET
+        )
     except gemini.GeminiQuotaExceeded:
         raise AiGenerationError("Дневной лимит Gemini исчерпан — обновите ключ")
     except gemini.GeminiUnavailable as e:

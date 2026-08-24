@@ -43,7 +43,8 @@ class Settings(BaseSettings):
 
     # Запасная модель: у неё отдельная квота, включается при 429 у основной.
     gemini_fallback_model: str = "gemini-flash-lite-latest"
-    gemini_model: str = Field("gemini-2.5-flash", alias="GEMINI_MODEL")
+    # gemini-2.5-flash и 2.0-flash сняты — Google отвечает по ним 404.
+    gemini_model: str = Field("gemini-3.6-flash", alias="GEMINI_MODEL")
 
     @property
     def cors_list(self) -> list[str]:
