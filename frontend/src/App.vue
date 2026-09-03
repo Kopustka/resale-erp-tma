@@ -10,16 +10,11 @@ import BiScreen from '@/screens/BiScreen.vue'
 import SettingsScreen from '@/screens/SettingsScreen.vue'
 
 /*
- * Оверлеи грузим по требованию. Раньше вся пятёрка попадала в стартовый
- * бандл, хотя открывается по одному и не сразу: карточка, создание,
- * шаблоны, каналы, контент-план. Их код тянулся при каждом запуске
- * мини-аппа — а это первое, что видит клиент.
+ * Оверлеи грузим по требованию: их код не нужен на старте, а старт —
+ * первое, что видит клиент.
  */
 const CreateScreen = defineAsyncComponent(() => import('@/screens/CreateScreen.vue'))
 const ItemDetail = defineAsyncComponent(() => import('@/screens/ItemDetail.vue'))
-const TemplatesScreen = defineAsyncComponent(() => import('@/screens/TemplatesScreen.vue'))
-const ChannelsScreen = defineAsyncComponent(() => import('@/screens/ChannelsScreen.vue'))
-const CalendarScreen = defineAsyncComponent(() => import('@/screens/CalendarScreen.vue'))
 const AdminScreen = defineAsyncComponent(() => import('@/screens/AdminScreen.vue'))
 
 
@@ -47,9 +42,6 @@ function prefetchOverlays(): void {
   const load = () => {
     void import('@/screens/ItemDetail.vue')
     void import('@/screens/CreateScreen.vue')
-    void import('@/screens/TemplatesScreen.vue')
-    void import('@/screens/ChannelsScreen.vue')
-    void import('@/screens/CalendarScreen.vue')
   }
   const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => void })
     .requestIdleCallback
@@ -100,12 +92,6 @@ onMounted(() => {
     <CreateScreen v-if="nav.overlay === 'create'" />
     <!-- Оверлей детали/редактирования -->
     <ItemDetail v-if="nav.overlay === 'detail'" />
-    <!-- Оверлей шаблонов постов (только OWNER) -->
-    <TemplatesScreen v-if="nav.overlay === 'templates'" />
-    <!-- Оверлей каналов автопостинга (только OWNER) -->
-    <ChannelsScreen v-if="nav.overlay === 'channels'" />
-    <!-- Оверлей контент-плана (только OWNER) -->
-    <CalendarScreen v-if="nav.overlay === 'calendar'" />
     <!-- Оверлей админ-панели (только OWNER) -->
     <AdminScreen v-if="nav.overlay === 'admin'" />
 

@@ -6,11 +6,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import AuthImage from '@/shared/ui/AuthImage.vue'
-import DiscountSheet from '@/components/DiscountSheet.vue'
-import { discountsApi } from '@/shared/api/endpoints'
-import type { Discount } from '@/shared/api/types'
 import StatusBadge from '@/shared/ui/StatusBadge.vue'
-import { itemsApi } from '@/shared/api/endpoints'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
@@ -61,55 +57,6 @@ const saving = ref(false)
 const busy = ref(false)
 const confirmDelete = ref(false)
 
-// --- Скидки ---
-const discountOpen = ref(false)
-
-/**
- * Почему скидку сделать нельзя. null — можно.
- * Объявление уходит ответом на пост вещи, поэтому до публикации
- * отвечать не на что.
- */
-const discountBlock = computed<string | null>(() => {
-  const it = item.value
-  if (!it) return 'Вещь не загружена'
-  if (it.status !== 'LISTED') return 'Скидку можно сделать только на выложенную вещь'
-  if (it.list_price === null || it.list_price === undefined)
-    return 'Сначала укажите цену продажи — от неё считается скидка'
-  return null
-})
-const discounts = ref<Discount[]>([])
-
-async function loadDiscounts(): Promise<void> {
-  const it = item.value
-  if (!it) return
-  try {
-    discounts.value = await discountsApi.list(it.id, true)
-  } catch {
-    /* история необязательна — молчим */
-  }
-}
-
-async function onDiscountCreated(): Promise<void> {
-  await loadDiscounts()
-}
-
-async function cancelDiscount(d: Discount): Promise<void> {
-  try {
-    await discountsApi.cancel(d.id)
-    toast.success('Скидка отменена')
-    await loadDiscounts()
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Не удалось отменить')
-  }
-}
-
-function discountWhen(d: Discount): string {
-  if (!d.scheduled_at) return 'сразу'
-  return new Date(d.scheduled_at).toLocaleString('ru-RU', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
-}
-
 function numToStr(v: number | null | undefined): string {
   return v === null || v === undefined ? '' : String(v)
 }
@@ -139,7 +86,6 @@ function syncForm(): void {
 }
 
 watch(() => nav.detailItemId, syncForm, { immediate: true })
-watch(() => nav.detailItemId, () => void loadDiscounts(), { immediate: true })
 
 // Фоновая AI-генерация могла доехать, пока карточка открыта: подтягиваем
 // новые название/описание в форму, но НЕ затираем то, что юзер уже правил.
@@ -283,31 +229,6 @@ async function copyTitle(): Promise<void> {
   }
 }
 
-// AI-перегенерация: результат подставляется в форму, юзер правит и сохраняет.
-const regenerating = ref(false)
-
-async function regenerate(): Promise<void> {
-  const it = item.value
-  if (!it || regenerating.value) return
-  if (it.photo_count === 0) {
-    toast.error('У вещи нет фото — добавьте хотя бы одно')
-    return
-  }
-  regenerating.value = true
-  try {
-    const gen = await itemsApi.aiDescribe(it.id)
-    form.title = gen.title
-    form.description = gen.description
-    hapticNotify('success')
-    toast.success('Сгенерировано — проверь и сохрани')
-  } catch (e) {
-    hapticNotify('error')
-    toast.error(e instanceof Error ? e.message : 'Не удалось сгенерировать')
-  } finally {
-    regenerating.value = false
-  }
-}
-
 async function doArchive(): Promise<void> {
   const it = item.value
   if (!it) return
@@ -423,34 +344,6 @@ const photoIndexes = computed(() =>
         <p v-else class="hint small">Дальнейших переходов нет.</p>
       </section>
 
-      <!-- Скидка -->
-      <section class="block">
-        <h2 class="block-title">Скидка</h2>
-        <div class="status-now">
-          Цена:
-          <template v-if="item.price_before_discount">
-            <s class="old-price">{{ item.price_before_discount }}</s>
-          </template>
-          <b>{{ item.list_price ?? '—' }}</b>
-        </div>
-        <button class="wide tap" :disabled="!!discountBlock" @click="discountOpen = true">
-          Сделать скидку
-        </button>
-        <p v-if="discountBlock" class="hint small">{{ discountBlock }}</p>
-
-        <div v-if="discounts.length" class="dlist">
-          <div v-for="d in discounts" :key="d.id" class="drow" :class="d.status.toLowerCase()">
-            <span class="dmain">
-              −{{ d.percent }}% · {{ d.old_price }} → <b>{{ d.new_price }}</b>
-            </span>
-            <span class="hint small">{{ discountWhen(d) }}</span>
-            <button v-if="d.status === 'SCHEDULED'" class="link small tap" @click="cancelDiscount(d)">
-              Отменить
-            </button>
-          </div>
-        </div>
-      </section>
-
       <!-- Основное -->
       <section class="block">
         <h2 class="block-title">Основное</h2>
@@ -477,18 +370,7 @@ const photoIndexes = computed(() =>
         </div>
         <label class="lbl">Состояние</label>
         <input v-model="form.condition" class="field" placeholder="8/10" :disabled="!canEdit" />
-        <div class="lbl-row">
-          <label class="lbl">Описание</label>
-          <span v-if="item && items.aiPending[item.id]" class="gen-hint">✨ генерируется…</span>
-          <button
-            v-else-if="canEdit"
-            class="regen-btn"
-            :disabled="regenerating"
-            @click="regenerate"
-          >
-            {{ regenerating ? 'Генерация…' : '✨ Перегенерировать' }}
-          </button>
-        </div>
+        <label class="lbl">Описание</label>
         <textarea v-model="form.description" class="field area" rows="4" :disabled="!canEdit" />
       </section>
 
@@ -593,7 +475,6 @@ const photoIndexes = computed(() =>
     </div>
   </div>
 
-    <DiscountSheet v-model="discountOpen" :item="item" @created="onDiscountCreated" />
 </template>
 
 <style scoped>
@@ -685,18 +566,6 @@ const photoIndexes = computed(() =>
 .rollback:disabled {
   opacity: 0.5;
 }
-.lbl-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-.regen-btn {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--tg-theme-link-color);
-  padding: 6px 0;
-}
 .regen-btn:disabled {
   opacity: 0.5;
 }
@@ -712,12 +581,6 @@ const photoIndexes = computed(() =>
 }
 .copy-btn:disabled {
   opacity: 0.5;
-}
-.gen-hint {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--tg-theme-link-color);
-  animation: gen-pulse 1.4s ease-in-out infinite;
 }
 @keyframes gen-pulse {
   0%,
@@ -823,10 +686,6 @@ const photoIndexes = computed(() =>
 .save:disabled {
   opacity: 0.5;
 }
-.old-price {
-  color: var(--tg-theme-hint-color);
-  margin-right: 6px;
-}
 .wide {
   width: 100%;
   min-height: var(--tap);
@@ -839,30 +698,5 @@ const photoIndexes = computed(() =>
 }
 .wide:disabled {
   opacity: 0.5;
-}
-.dlist {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.drow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-}
-.drow.published {
-  opacity: 0.65;
-}
-.drow.cancelled {
-  opacity: 0.45;
-  text-decoration: line-through;
-}
-.dmain {
-  flex: 1;
-  font-size: 13px;
 }
 </style>

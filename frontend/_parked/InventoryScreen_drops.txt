@@ -1,0 +1,82 @@
+Групповой дроп, вырезанный из InventoryScreen.vue.
+
+// --- Режим выбора для публикации дропом ---
+const MAX_DROP = 10
+const selecting = ref(false)
+const selected = ref<string[]>([])
+const dropTitle = ref('')
+const publishing = ref(false)
+
+function toggleSelectMode(): void {
+  hapticSelection()
+  selecting.value = !selecting.value
+  if (!selecting.value) {
+    selected.value = []
+    dropTitle.value = ''
+  }
+}
+
+function toggleItem(id: string): void {
+  const at = selected.value.indexOf(id)
+  if (at !== -1) {
+    selected.value.splice(at, 1)
+  } else {
+    if (selected.value.length >= MAX_DROP) {
+      toast.error(`В альбом Telegram влезает не больше ${MAX_DROP} фото`)
+      return
+    }
+    selected.value.push(id)
+  }
+  hapticSelection()
+}
+
+async function publishDrop(): Promise<void> {
+  if (!selected.value.length || publishing.value) return
+  publishing.value = true
+  try {
+    const res = await dropsApi.create(selected.value, dropTitle.value.trim() || undefined)
+    hapticImpact('medium')
+    toast.success(
+      res.channels
+        ? `Дроп из ${res.with_photo} вещей отправлен в ${res.channels} канал(ов)`
+        : 'Дроп собран, но каналов для публикации нет',
+    )
+    selecting.value = false
+    selected.value = []
+    dropTitle.value = ''
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось опубликовать дроп')
+  } finally {
+    publishing.value = false
+  }
+}
+
+
+/* шаблон */
+    <!-- Панель дропа -->
+    <div v-if="selecting" class="drop-bar">
+      <input v-model="dropTitle" class="drop-title" placeholder="Название дропа" maxlength="120" />
+      <div class="drop-row">
+        <span class="hint">Выбрано: {{ selected.length }} / {{ MAX_DROP }}</span>
+        <button class="drop-cancel tap" @click="toggleSelectMode">Отмена</button>
+        <button
+          class="drop-go tap"
+          :disabled="!selected.length || publishing"
+          @click="publishDrop"
+        >
+          {{ publishing ? '…' : 'Опубликовать' }}
+        </button>
+      </div>
+    </div>
+
+    <button
+      v-if="!items.viewArchived && !selecting"
+      class="fab fab-drop"
+      aria-label="Собрать дроп"
+      @click="toggleSelectMode"
+    >
+      <svg viewBox="0 0 24 24" width="24" height="24">
+        <path fill="currentColor" d="M4 6h7v7H4V6zm9 0h7v7h-7V6zM4 15h7v5H4v-5zm9 0h7v5h-7v-5z" />
+      </svg>
+    </button>
+

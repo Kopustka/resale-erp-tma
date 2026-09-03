@@ -1,0 +1,131 @@
+Скидки и AI-перегенерация, вырезанные из ItemDetail.vue.
+
+const discounts = ref<Discount[]>([])
+
+async function loadDiscounts(): Promise<void> {
+  const it = item.value
+  if (!it) return
+  try {
+    discounts.value = await discountsApi.list(it.id, true)
+  } catch {
+    /* история необязательна — молчим */
+  }
+}
+
+async function onDiscountCreated(): Promise<void> {
+  await loadDiscounts()
+}
+
+async function cancelDiscount(d: Discount): Promise<void> {
+  try {
+    await discountsApi.cancel(d.id)
+    toast.success('Скидка отменена')
+    await loadDiscounts()
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Не удалось отменить')
+  }
+}
+
+function discountWhen(d: Discount): string {
+  if (!d.scheduled_at) return 'сразу'
+  return new Date(d.scheduled_at).toLocaleString('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+
+
+/* ---- */
+
+// AI-перегенерация: результат подставляется в форму, юзер правит и сохраняет.
+const regenerating = ref(false)
+
+async function regenerate(): Promise<void> {
+  const it = item.value
+  if (!it || regenerating.value) return
+  if (it.photo_count === 0) {
+    toast.error('У вещи нет фото — добавьте хотя бы одно')
+    return
+  }
+  regenerating.value = true
+  try {
+    const gen = await itemsApi.aiDescribe(it.id)
+    form.title = gen.title
+    form.description = gen.description
+    hapticNotify('success')
+    toast.success('Сгенерировано — проверь и сохрани')
+  } catch (e) {
+    hapticNotify('error')
+    toast.error(e instanceof Error ? e.message : 'Не удалось сгенерировать')
+  } finally {
+    regenerating.value = false
+  }
+}
+
+
+
+/* ---- */
+
+      <!-- Скидка -->
+      <section class="block">
+        <h2 class="block-title">Скидка</h2>
+        <div class="status-now">
+          Цена:
+          <template v-if="item.price_before_discount">
+            <s class="old-price">{{ item.price_before_discount }}</s>
+          </template>
+          <b>{{ item.list_price ?? '—' }}</b>
+        </div>
+        <button class="wide tap" :disabled="!!discountBlock" @click="discountOpen = true">
+          Сделать скидку
+        </button>
+        <p v-if="discountBlock" class="hint small">{{ discountBlock }}</p>
+
+        <div v-if="discounts.length" class="dlist">
+          <div v-for="d in discounts" :key="d.id" class="drow" :class="d.status.toLowerCase()">
+            <span class="dmain">
+              −{{ d.percent }}% · {{ d.old_price }} → <b>{{ d.new_price }}</b>
+            </span>
+            <span class="hint small">{{ discountWhen(d) }}</span>
+            <button v-if="d.status === 'SCHEDULED'" class="link small tap" @click="cancelDiscount(d)">
+              Отменить
+            </button>
+          </div>
+        </div>
+      </section>
+
+
+
+/* ---- */
+
+        <div class="lbl-row">
+          <label class="lbl">Описание</label>
+          <span v-if="item && items.aiPending[item.id]" class="gen-hint">✨ генерируется…</span>
+          <button
+            v-else-if="canEdit"
+            class="regen-btn"
+            :disabled="regenerating"
+            @click="regenerate"
+          >
+            {{ regenerating ? 'Генерация…' : '✨ Перегенерировать' }}
+          </button>
+        </div>
+
+/* ---- */
+
+// --- Скидки ---
+const discountOpen = ref(false)
+
+/**
+ * Почему скидку сделать нельзя. null — можно.
+ * Объявление уходит ответом на пост вещи, поэтому до публикации
+ * отвечать не на что.
+ */
+const discountBlock = computed<string | null>(() => {
+  const it = item.value
+  if (!it) return 'Вещь не загружена'
+  if (it.status !== 'LISTED') return 'Скидку можно сделать только на выложенную вещь'
+  if (it.list_price === null || it.list_price === undefined)
+    return 'Сначала укажите цену продажи — от неё считается скидка'
+  return null
+})

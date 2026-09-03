@@ -1,56 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { openAdmin, openCalendar, openChannels, openTemplates } from '@/app/navigation'
+import { onMounted, ref } from 'vue'
+import { openAdmin } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
-import { useTemplatesStore } from '@/stores/templates'
 import { useToastStore } from '@/stores/toast'
-import {
-  CURRENCIES,
-  CURRENCY_SYMBOLS,
-  type Currency,
-  type Role,
-  type TemplatePlaceholder,
-} from '@/shared/api/types'
-import { channelsApi, storesApi } from '@/shared/api/endpoints'
-import { sanitizeTelegramHtml } from '@/shared/utils/sanitize'
+import { CURRENCIES, CURRENCY_SYMBOLS, type Currency, type Role } from '@/shared/api/types'
+import { storesApi } from '@/shared/api/endpoints'
 import { hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
 const items = useItemsStore()
 const analytics = useAnalyticsStore()
-const templates = useTemplatesStore()
 const toast = useToastStore()
 
 /** Подпись под строкой перехода: какой шаблон сейчас используется. */
-const activeTemplateName = computed(() => {
-  if (templates.loading && !templates.list.length) return 'Загрузка…'
-  return templates.activeTemplate?.name ?? 'Стандартное оформление'
-})
-
-const channelsCount = ref<number | null>(null)
-const channelsHint = computed(() => {
-  if (channelsCount.value === null) return 'Загрузка…'
-  if (channelsCount.value === 0) return 'Не настроены'
-  return `Подключено: ${channelsCount.value}`
-})
-
-function goCalendar(): void {
-  hapticSelection()
-  openCalendar()
-}
-
-function goChannels(): void {
-  hapticSelection()
-  openChannels()
-}
-
-function goTemplates(): void {
-  hapticSelection()
-  openTemplates()
-}
-
 function goAdmin(): void {
   hapticSelection()
   openAdmin()
@@ -88,106 +52,10 @@ async function changeBaseCurrency(cur: Currency): Promise<void> {
 }
 
 // --- Автопостинг в канал ---
-const channelInput = ref('')
-const channelSignature = ref('')
-const channelSaved = ref<string | null>(null)
-const channelBusy = ref(false)
-const watermarkEnabled = ref(false)
-const watermarkText = ref('')
-const bumpEnabled = ref(false)
-const bumpAfterDays = ref(60)
-const previewBefore = ref(false)
-const subsEnabled = ref(false)
-const autoReply = ref(false)
-
-// --- Шаблон объявления о скидке ---
-const dtBody = ref('')
-const dtIsDefault = ref(true)
-const dtPlaceholders = ref<TemplatePlaceholder[]>([])
-const dtPreview = ref('')
-const dtOpen = ref(false)
-const dtBusy = ref(false)
-
-async function loadDiscountTemplate(): Promise<void> {
-  try {
-    const t = await storesApi.discountTemplate()
-    dtBody.value = t.body
-    dtIsDefault.value = t.is_default
-    dtPlaceholders.value = t.placeholders
-    dtPreview.value = t.preview
-  } catch {
-    /* необязательно — молчим */
-  }
-}
-
-async function saveDiscountTemplate(): Promise<void> {
-  dtBusy.value = true
-  try {
-    await storesApi.setChannel({ discount_template: dtBody.value.trim() || null })
-    toast.success(dtBody.value.trim() ? 'Шаблон скидки сохранён' : 'Вернул встроенный шаблон')
-    await loadDiscountTemplate()
-    dtOpen.value = false
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
-  } finally {
-    dtBusy.value = false
-  }
-}
-
-function insertPlaceholder(key: string): void {
-  hapticSelection()
-  dtBody.value += `{${key}}`
-}
-
-async function loadChannel(): Promise<void> {
-  try {
-    const ch = await storesApi.getChannel()
-    channelSaved.value = ch.channel_id
-    channelInput.value = ch.channel_id ?? ''
-    channelSignature.value = ch.channel_signature ?? ''
-    watermarkEnabled.value = ch.watermark_enabled
-    watermarkText.value = ch.watermark_text ?? ''
-    bumpEnabled.value = ch.bump_enabled
-    bumpAfterDays.value = ch.bump_after_days
-    previewBefore.value = ch.preview_before_post
-    subsEnabled.value = ch.subscriptions_enabled
-    autoReply.value = ch.auto_reply_enabled
-  } catch {
-    /* игнор — просто пусто */
-  }
-}
-
-async function saveChannel(): Promise<void> {
-  channelBusy.value = true
-  try {
-    // channel_id намеренно не шлём: каналами управляет отдельный экран,
-    // а null здесь выключил бы автопостинг целиком.
-    await storesApi.setChannel({
-      channel_signature: channelSignature.value.trim() || null,
-      watermark_enabled: watermarkEnabled.value,
-      watermark_text: watermarkText.value.trim() || null,
-      bump_enabled: bumpEnabled.value,
-      bump_after_days: bumpAfterDays.value,
-      preview_before_post: previewBefore.value,
-      subscriptions_enabled: subsEnabled.value,
-      auto_reply_enabled: autoReply.value,
-    })
-    toast.success('Сохранено')
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Не удалось сохранить')
-  } finally {
-    channelBusy.value = false
-  }
-}
-
 onMounted(() => {
   baseCurrency.value = session.baseCurrency
   if (session.isOwner) {
     void session.fetchMembers()
-    void loadChannel()
-    void channelsApi.list().then((c) => (channelsCount.value = c.length)).catch(() => undefined)
-    void templates.fetch()
-    void loadDiscountTemplate()
     void storesApi.getSettings().then((s) => (baseCurrency.value = s.base_currency))
   }
 })
@@ -368,159 +236,6 @@ function exportCsv(): void {
             <span class="cur-sym">{{ CURRENCY_SYMBOLS[cur] }}</span>
           </button>
         </div>
-      </section>
-
-      <!-- Автопостинг в канал (только OWNER) -->
-      <section v-if="session.isOwner" class="block">
-        <h2 class="block-title">Автопостинг в Telegram-канал</h2>
-        <p class="hint channel-note">
-          Выставленные вещи (статус «Выставлен») бот автоматически публикует в канал с фото,
-          описанием, замерами и ценой. При продаже пост помечается «Продано».
-        </p>
-        <button class="nav-row tap" @click="goChannels">
-          <span class="nav-row-main">
-            <span class="nav-row-title">Каналы</span>
-            <span class="nav-row-sub">{{ channelsHint }}</span>
-          </span>
-          <span class="nav-row-chevron" aria-hidden="true">›</span>
-        </button>
-
-        <label class="lbl">Общая подпись под постами</label>
-        <input
-          v-model="channelSignature"
-          class="field"
-          maxlength="120"
-          placeholder="Написать: @username"
-          autocomplete="off"
-        />
-
-        <label class="wm-row">
-          <span class="wm-main">
-            <span class="wm-title">Водяной знак на фото</span>
-            <span class="wm-sub">
-              Подпись в углу фото, уходящих в канал. Оригиналы в складе не меняются.
-            </span>
-          </span>
-          <input v-model="watermarkEnabled" type="checkbox" class="wm-check" />
-        </label>
-        <input
-          v-if="watermarkEnabled"
-          v-model="watermarkText"
-          class="field"
-          maxlength="60"
-          placeholder="@ваш_канал (пусто — возьмём подпись выше)"
-          autocomplete="off"
-        />
-
-        <label class="wm-row">
-          <span class="wm-main">
-            <span class="wm-title">Отвечать в комментариях</span>
-            <span class="wm-sub">
-              Бот сам ответит на вопросы о замерах, размере, цене, состоянии
-              и наличии. Если вопрос непонятен — промолчит.
-            </span>
-          </span>
-          <input v-model="autoReply" type="checkbox" class="wm-check" />
-        </label>
-        <p v-if="autoReply" class="hint channel-hint">
-          Нужны две вещи: к каналу привязана группа обсуждений, и бот добавлен
-          в неё <b>администратором</b>. Иначе Telegram не покажет ему комментарии —
-          у ботов по умолчанию включён режим приватности.
-        </p>
-
-        <label class="wm-row">
-          <span class="wm-main">
-            <span class="wm-title">Подписки покупателей</span>
-            <span class="wm-sub">
-              Под карточкой вещи появится «Ждать похожее». Бот сам сообщит
-              подписчику, когда выставите подходящее — не чаще раза в час.
-            </span>
-          </span>
-          <input v-model="subsEnabled" type="checkbox" class="wm-check" />
-        </label>
-
-        <label class="wm-row">
-          <span class="wm-main">
-            <span class="wm-title">Показывать перед публикацией</span>
-            <span class="wm-sub">
-              Бот пришлёт готовый пост в личку с кнопками «Опубликовать» и «Отмена».
-            </span>
-          </span>
-          <input v-model="previewBefore" type="checkbox" class="wm-check" />
-        </label>
-
-        <label class="wm-row">
-          <span class="wm-main">
-            <span class="wm-title">Поднимать зависшие</span>
-            <span class="wm-sub">
-              Вещь, висящая дольше срока ниже, переопубликуется наверх канала.
-              Старый пост при этом удаляется.
-            </span>
-          </span>
-          <input v-model="bumpEnabled" type="checkbox" class="wm-check" />
-        </label>
-        <div v-if="bumpEnabled" class="bump-days">
-          <span class="wm-sub">Поднимать после</span>
-          <input v-model.number="bumpAfterDays" type="number" min="7" max="365" class="field days" />
-          <span class="wm-sub">дней</span>
-        </div>
-
-        <button class="btn-primary tap save-row" :disabled="channelBusy" @click="saveChannel">
-          {{ channelBusy ? '…' : 'Сохранить' }}
-        </button>
-
-        <button class="nav-row tap" @click="dtOpen = !dtOpen">
-          <span class="nav-row-main">
-            <span class="nav-row-title">Текст скидки</span>
-            <span class="nav-row-sub">
-              {{ dtIsDefault ? 'Встроенный шаблон' : 'Свой шаблон' }}
-            </span>
-          </span>
-          <span class="nav-row-chevron" aria-hidden="true">{{ dtOpen ? '⌄' : '›' }}</span>
-        </button>
-
-        <template v-if="dtOpen">
-          <textarea v-model="dtBody" class="field dt-area" rows="4" maxlength="1000" />
-          <div class="dt-chips">
-            <button
-              v-for="ph in dtPlaceholders"
-              :key="ph.key"
-              class="dt-chip tap"
-              :title="ph.label"
-              @click="insertPlaceholder(ph.key)"
-            >
-              {{ ph.key }}
-            </button>
-          </div>
-          <div v-if="dtPreview" class="dt-preview">
-            <span class="hint">Так выглядит объявление:</span>
-            <div class="dt-preview-body" v-html="sanitizeTelegramHtml(dtPreview)" />
-          </div>
-          <div class="dt-actions">
-            <button class="btn-primary tap" :disabled="dtBusy" @click="saveDiscountTemplate">
-              {{ dtBusy ? '…' : 'Сохранить' }}
-            </button>
-            <button class="btn-secondary tap" @click="dtBody = ''; saveDiscountTemplate()">
-              Вернуть встроенный
-            </button>
-          </div>
-        </template>
-
-        <button class="nav-row tap" @click="goCalendar">
-          <span class="nav-row-main">
-            <span class="nav-row-title">Контент-план</span>
-            <span class="nav-row-sub">Анонсы и отложенные посты</span>
-          </span>
-          <span class="nav-row-chevron" aria-hidden="true">›</span>
-        </button>
-
-        <button class="nav-row tap" @click="goTemplates">
-          <span class="nav-row-main">
-            <span class="nav-row-title">Шаблоны постов</span>
-            <span class="nav-row-sub">{{ activeTemplateName }}</span>
-          </span>
-          <span class="nav-row-chevron" aria-hidden="true">›</span>
-        </button>
       </section>
 
       <!-- Экспорт -->

@@ -8,65 +8,14 @@ import SellPriceSheet from '@/components/SellPriceSheet.vue'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
 import { useToastStore } from '@/stores/toast'
-import { dropsApi } from '@/shared/api/endpoints'
 import type { Currency, ItemOut, ItemStatus } from '@/shared/api/types'
 import { nextStatus, requiresListPrice, requiresSellingPrice } from '@/shared/utils/status'
-import { hapticImpact, hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
+import { hapticImpact, hapticNotify } from '@/shared/telegram/webapp'
 import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
 const items = useItemsStore()
 const toast = useToastStore()
 
-// --- Режим выбора для публикации дропом ---
-const MAX_DROP = 10
-const selecting = ref(false)
-const selected = ref<string[]>([])
-const dropTitle = ref('')
-const publishing = ref(false)
-
-function toggleSelectMode(): void {
-  hapticSelection()
-  selecting.value = !selecting.value
-  if (!selecting.value) {
-    selected.value = []
-    dropTitle.value = ''
-  }
-}
-
-function toggleItem(id: string): void {
-  const at = selected.value.indexOf(id)
-  if (at !== -1) {
-    selected.value.splice(at, 1)
-  } else {
-    if (selected.value.length >= MAX_DROP) {
-      toast.error(`В альбом Telegram влезает не больше ${MAX_DROP} фото`)
-      return
-    }
-    selected.value.push(id)
-  }
-  hapticSelection()
-}
-
-async function publishDrop(): Promise<void> {
-  if (!selected.value.length || publishing.value) return
-  publishing.value = true
-  try {
-    const res = await dropsApi.create(selected.value, dropTitle.value.trim() || undefined)
-    hapticImpact('medium')
-    toast.success(
-      res.channels
-        ? `Дроп из ${res.with_photo} вещей отправлен в ${res.channels} канал(ов)`
-        : 'Дроп собран, но каналов для публикации нет',
-    )
-    selecting.value = false
-    selected.value = []
-    dropTitle.value = ''
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Не удалось опубликовать дроп')
-  } finally {
-    publishing.value = false
-  }
-}
 const session = useSessionStore()
 const { items: itemList, loading, loadingMore, error, isEmpty } = storeToRefs(items)
 
@@ -261,22 +210,14 @@ onBeforeUnmount(() => {
       {{ items.viewArchived ? 'Архив пуст.' : 'Пусто. Добавьте первый товар кнопкой «+».' }}
     </div>
 
-    <div v-else v-bind="containerProps" class="list no-scrollbar" :class="{ 'picking-mode': selecting }" @scroll="onScroll">
+    <div v-else v-bind="containerProps" class="list no-scrollbar" @scroll="onScroll">
       <div v-bind="wrapperProps">
         <div
           v-for="row in list"
           :key="row.data.id"
           class="row"
-          :class="{ picking: selecting }"
           :style="{ height: ROW_HEIGHT + 'px' }"
         >
-          <label v-if="selecting" class="pick">
-            <input
-              type="checkbox"
-              :checked="selected.includes(row.data.id)"
-              @change="toggleItem(row.data.id)"
-            />
-          </label>
           <ItemCard
             :item="row.data"
             :show-finance="session.canSeeFinance"
@@ -290,34 +231,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Панель дропа -->
-    <div v-if="selecting" class="drop-bar">
-      <input v-model="dropTitle" class="drop-title" placeholder="Название дропа" maxlength="120" />
-      <div class="drop-row">
-        <span class="hint">Выбрано: {{ selected.length }} / {{ MAX_DROP }}</span>
-        <button class="drop-cancel tap" @click="toggleSelectMode">Отмена</button>
-        <button
-          class="drop-go tap"
-          :disabled="!selected.length || publishing"
-          @click="publishDrop"
-        >
-          {{ publishing ? '…' : 'Опубликовать' }}
-        </button>
-      </div>
-    </div>
-
-    <button
-      v-if="!items.viewArchived && !selecting"
-      class="fab fab-drop"
-      aria-label="Собрать дроп"
-      @click="toggleSelectMode"
-    >
-      <svg viewBox="0 0 24 24" width="24" height="24">
-        <path fill="currentColor" d="M4 6h7v7H4V6zm9 0h7v7h-7V6zM4 15h7v5H4v-5zm9 0h7v5h-7v-5z" />
-      </svg>
-    </button>
-
-    <button v-if="!items.viewArchived && !selecting" class="fab" aria-label="Добавить товар" @click="openCreate">
+    <button v-if="!items.viewArchived" class="fab" aria-label="Добавить товар" @click="openCreate">
       <svg viewBox="0 0 24 24" width="28" height="28">
         <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z" />
       </svg>
@@ -454,81 +368,5 @@ onBeforeUnmount(() => {
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 40;
-}
-.list.picking-mode {
-  padding-bottom: 132px;
-}
-.row.picking {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.row.picking > :last-child {
-  flex: 1;
-  min-width: 0;
-  pointer-events: none;
-}
-.pick input {
-  width: 22px;
-  height: 22px;
-  accent-color: var(--tg-theme-button-color);
-}
-.drop-bar {
-  /* fixed, а не absolute: у .screen нет position, и absolute привязывался
-     к окну — панель уезжала под нижнее меню. Ставим над меню и выше по слою. */
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(var(--nav-height) + var(--safe-bottom));
-  padding: 10px 12px;
-  background: var(--tg-theme-secondary-bg-color);
-  border-top: 1px solid var(--tg-theme-bg-color);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
-  z-index: 60;
-}
-.drop-title {
-  width: 100%;
-  min-height: var(--tap);
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-bg-color);
-  color: var(--tg-theme-text-color);
-  border: 1px solid transparent;
-}
-.drop-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-}
-.drop-row .hint {
-  flex: 1;
-  font-size: 13px;
-}
-.drop-cancel,
-.drop-go {
-  min-height: var(--tap);
-  padding: 0 14px;
-  border-radius: var(--radius);
-  font-weight: 700;
-}
-.drop-cancel {
-  color: var(--tg-theme-link-color);
-}
-.drop-go {
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
-}
-.drop-go:disabled {
-  opacity: 0.6;
-}
-.fab-drop {
-  /* Над кнопкой «+»: её низ = nav + safe + 16, высота 56, зазор 12.
-     Без учёта --nav-height кнопки наезжали друг на друга. */
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + 84px);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
-  width: 48px;
-  height: 48px;
 }
 </style>

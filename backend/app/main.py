@@ -14,18 +14,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import (
-    admin,
-    analytics,
-    channels,
-    discounts,
-    drops,
-    items,
-    media,
-    posts,
-    stores,
-    templates,
-)
+from .routers import admin, analytics, items, media, stores
 
 settings = get_settings()
 log = logging.getLogger("api")
@@ -135,17 +124,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:  # noqa: BLE001
             log.warning("не удалось прогреть курсы: %s", e)
 
-    from .services.post_worker import run_forever
-
     warmup = asyncio.create_task(_warm_fx(), name="fx-warmup")
-    worker = asyncio.create_task(run_forever(), name="post-queue")
     try:
         yield
     finally:
         warmup.cancel()
-        worker.cancel()
         with suppress(asyncio.CancelledError):
-            await worker
+            await warmup
 
 
 app = FastAPI(title="Resale ERP TMA", version="1.0.0", lifespan=lifespan)
@@ -253,9 +238,4 @@ app.include_router(items.router)
 app.include_router(analytics.router)
 app.include_router(stores.router)
 app.include_router(media.router)
-app.include_router(templates.router)
-app.include_router(channels.router)
-app.include_router(discounts.router)
-app.include_router(drops.router)
-app.include_router(posts.router)
 app.include_router(admin.router)
