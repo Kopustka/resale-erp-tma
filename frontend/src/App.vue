@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { nav } from '@/app/navigation'
 import type { Tab } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
@@ -28,6 +28,26 @@ const session = useSessionStore()
  * заранее и объясняем словами, куда идти.
  */
 const outsideTelegram = !isInTelegram()
+
+/**
+ * Оверлеи различаются по смыслу, поэтому и движутся по-разному.
+ *
+ * Создание вещи — форма поверх текущего экрана: приходит снизу и уходит
+ * вниз, как лист бумаги, который положили сверху и убрали.
+ *
+ * Карточка вещи и админка — переход вглубь: приходят справа и уходят
+ * вправо. Так видно, что это не «поверх», а «дальше», и возврат ощущается
+ * возвратом, а не закрытием.
+ */
+const OVERLAYS = {
+  create: { comp: CreateScreen, motion: 'lift' },
+  detail: { comp: ItemDetail, motion: 'push' },
+  admin: { comp: AdminScreen, motion: 'push' },
+} as const
+
+const overlay = computed(() =>
+  nav.overlay ? (OVERLAYS[nav.overlay as keyof typeof OVERLAYS] ?? null) : null,
+)
 const botUrl = import.meta.env.VITE_BOT_URL || ''
 
 /**
@@ -103,7 +123,10 @@ onMounted(() => {
 
     <template v-else-if="session.ready">
       <main class="viewport">
-        <InventoryScreen v-show="nav.activeTab === 'inventory'" />
+        <InventoryScreen
+          v-show="nav.activeTab === 'inventory'"
+          :class="{ shown: nav.activeTab === 'inventory' }"
+        />
         <!--
           Вкладки монтируем при первом заходе, дальше держим через v-show.
           Раньше все три монтировались сразу, и настройки с аналитикой на
@@ -112,19 +135,21 @@ onMounted(() => {
         <BiScreen
           v-if="seen.has('bi') && session.canSeeFinance"
           v-show="nav.activeTab === 'bi'"
+          :class="{ shown: nav.activeTab === 'bi' }"
         />
-        <SettingsScreen v-if="seen.has('settings')" v-show="nav.activeTab === 'settings'" />
+        <SettingsScreen
+          v-if="seen.has('settings')"
+          v-show="nav.activeTab === 'settings'"
+          :class="{ shown: nav.activeTab === 'settings' }"
+        />
       </main>
 
       <BottomNav />
     </template>
 
-    <!-- Оверлей создания товара -->
-    <CreateScreen v-if="nav.overlay === 'create'" />
-    <!-- Оверлей детали/редактирования -->
-    <ItemDetail v-if="nav.overlay === 'detail'" />
-    <!-- Оверлей админ-панели (только OWNER) -->
-    <AdminScreen v-if="nav.overlay === 'admin'" />
+    <Transition :name="overlay ? `ov-${overlay.motion}` : 'ov-lift'">
+      <component :is="overlay.comp" v-if="overlay" />
+    </Transition>
 
     <ToastHost />
   </div>
@@ -143,6 +168,65 @@ onMounted(() => {
 }
 .viewport > * {
   height: 100%;
+}
+/*
+ * Вкладки переключаются через v-show, то есть display: none. Переход по
+ * этому свойству не проигрывается, поэтому берём анимацию: класс снимается
+ * при уходе с вкладки и ставится обратно при возврате, а вместе с ним
+ * заново запускается и анимация.
+ *
+ * Движение короткое и почти незаметное: вкладка должна появляться сразу,
+ * а не выезжать — иначе интерфейс начинает казаться медленным.
+ */
+.viewport > .shown {
+  animation: tab-in 170ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+/* --- Оверлеи ------------------------------------------------------------
+   Анимируем только transform и opacity: их считает композитор, и на
+   слабом телефоне не появляется рывков. Плоскости внизу не двигаем —
+   их всё равно перекрывает оверлей во весь экран. */
+.ov-lift-enter-active,
+.ov-push-enter-active {
+  transition:
+    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.18s ease-out;
+  will-change: transform;
+}
+.ov-lift-leave-active,
+.ov-push-leave-active {
+  transition:
+    transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.16s ease-in;
+  will-change: transform;
+}
+.ov-lift-enter-from,
+.ov-lift-leave-to {
+  transform: translate3d(0, 100%, 0);
+  opacity: 0.6;
+}
+.ov-push-enter-from,
+.ov-push-leave-to {
+  transform: translate3d(14%, 0, 0);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport > .shown {
+    animation: none;
+  }
+  .ov-lift-enter-active,
+  .ov-push-enter-active,
+  .ov-lift-leave-active,
+  .ov-push-leave-active {
+    transition-duration: 0.01ms;
+  }
 }
 .boot {
   height: 100%;
