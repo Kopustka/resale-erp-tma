@@ -219,7 +219,7 @@ async function submit(): Promise<void> {
             <span class="add-label">Добавить</span>
           </button>
         </div>
-        <p class="hint note">Из галереи или камеры телефона. Можно несколько.</p>
+        <p class="note">Из галереи или камеры телефона. Можно несколько.</p>
         <input
           ref="fileInput"
           type="file"
@@ -286,9 +286,19 @@ async function submit(): Promise<void> {
       <section v-if="session.canSeeFinance" class="block">
         <h2 class="block-title">Закупка</h2>
         <label class="lbl">Валюта закупки</label>
-        <select v-model="form.cost_currency" class="field">
-          <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <div class="seg">
+          <button
+            v-for="c in CURRENCIES"
+            :key="c"
+            type="button"
+            class="seg-opt"
+            :class="{ sel: form.cost_currency === c }"
+            @click="form.cost_currency = c"
+          >
+            {{ c }}
+          </button>
+        </div>
+
         <label class="lbl">Себестоимость</label>
         <input v-model="form.cost_price" class="field num" inputmode="decimal" placeholder="0" />
         <div class="grid2">
@@ -301,15 +311,27 @@ async function submit(): Promise<void> {
             <input v-model="form.delivery_cost" class="field num" inputmode="decimal" placeholder="0" />
           </div>
         </div>
+      </section>
 
-        <h2 class="block-title" style="margin-top: 16px">Цена продажи</h2>
+      <section v-if="session.canSeeFinance" class="block">
+        <h2 class="block-title">Цена продажи</h2>
         <label class="lbl">Валюта цены</label>
-        <select v-model="form.price_currency" class="field">
-          <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <div class="seg">
+          <button
+            v-for="c in CURRENCIES"
+            :key="c"
+            type="button"
+            class="seg-opt"
+            :class="{ sel: form.price_currency === c }"
+            @click="form.price_currency = c"
+          >
+            {{ c }}
+          </button>
+        </div>
+
         <label class="lbl">Цена (в объявлении)</label>
         <input v-model="form.list_price" class="field num" inputmode="decimal" placeholder="0" />
-        <p class="hint note">Всё сведётся к основной валюте ({{ session.baseCurrency }}) по курсу НБ РБ.</p>
+        <p class="note">Всё сведётся к основной валюте ({{ session.baseCurrency }}) по курсу НБ РБ.</p>
       </section>
 
       <div class="scroll-pad" />
@@ -328,94 +350,181 @@ async function submit(): Promise<void> {
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: var(--tg-theme-bg-color);
   display: flex;
   flex-direction: column;
+  background: var(--ink-0);
+  color: var(--fg-0);
 }
+
+/* --- Шапка --- */
 .head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: calc(var(--safe-top) + 10px) 12px 10px;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  gap: 10px;
+  padding: calc(var(--safe-top) + 10px) var(--pad) 10px;
+  background: var(--ink-0);
 }
 .close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--r-pill);
+  background: var(--ink-1);
+  color: var(--fg-0);
+}
+.close:active {
+  background: var(--ink-2);
+}
+.close svg {
+  width: 18px;
+  height: 18px;
 }
 .title {
-  font-size: 18px;
-  font-weight: 700;
   margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
+
+/* --- Прокрутка и секции --- */
 .scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px;
+  padding: 4px var(--pad) 0;
 }
 .block {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  padding: 12px 0 8px;
 }
 .block-title {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--tg-theme-hint-color);
-  margin: 0 0 10px;
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--fg-0);
 }
 .note {
-  font-size: 12px;
-  margin: 0 0 10px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-2);
 }
+
+/* --- Поля --- */
 .lbl {
   display: block;
-  font-size: 13px;
-  color: var(--tg-theme-hint-color);
-  margin: 10px 0 4px;
+  margin: 14px 0 6px;
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+.block-title + .lbl,
+.grid2 .lbl {
+  margin-top: 0;
 }
 .field {
   width: 100%;
-  min-height: var(--tap);
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--tg-theme-secondary-bg-color);
-  background: var(--tg-theme-secondary-bg-color);
+  height: 50px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-0);
+  font-size: 16px;
   outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field::placeholder {
+  color: var(--fg-2);
 }
 .field:focus {
-  border-color: var(--tg-theme-link-color);
+  background: var(--ink-2);
 }
 .area {
+  height: auto;
+  min-height: 104px;
+  padding: 13px 14px;
+  line-height: 1.45;
   resize: vertical;
-  min-height: 76px;
 }
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: var(--gap);
 }
-.photo-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+
+/* Поле автодополнения — тот же язык, что и у обычных полей. */
+:deep(.ac .field) {
+  height: 50px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-0);
+  font-size: 16px;
+}
+:deep(.ac .field:focus) {
+  background: var(--ink-2);
+}
+:deep(.ac-list) {
+  padding: 6px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--ink-2);
+  box-shadow: none;
+}
+:deep(.ac-item) {
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  font-size: 15px;
+}
+:deep(.ac-item:active) {
+  background: var(--ink-3);
+}
+
+/* --- Переключатель валюты --- */
+.seg {
+  display: flex;
   gap: 8px;
 }
-@media (max-width: 360px) {
+.seg-opt {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--r-pill);
+  background: var(--ink-1);
+  color: var(--fg-1);
+  font-size: 14px;
+  font-weight: 650;
+}
+.seg-opt.sel {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+/* --- Фото: главный актив экрана, крупная сетка --- */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (min-width: 440px) {
   .photo-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 .thumb {
   position: relative;
   aspect-ratio: 1;
-  border-radius: var(--radius-sm);
+  border-radius: 14px;
   overflow: hidden;
-  background: var(--tg-theme-secondary-bg-color);
+  background: var(--ink-1);
 }
 .thumb.err {
-  outline: 2px solid var(--tg-theme-destructive-text-color, #e53935);
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
 }
 .thumb-img {
   width: 100%;
@@ -429,27 +538,40 @@ async function submit(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(14, 15, 18, 0.5);
 }
 .err-mark {
-  font-weight: 800;
   font-size: 20px;
+  font-weight: 700;
   color: #fff;
 }
-.thumb-x {
-  position: absolute;
-  top: 2px;
-  right: 2px;
+.spinner {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 16px;
-  line-height: 1;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.thumb-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--r-pill);
+  background: rgba(14, 15, 18, 0.6);
+  color: #fff;
+  font-size: 17px;
+  line-height: 1;
 }
 .add-tile {
   aspect-ratio: 1;
@@ -457,57 +579,41 @@ async function submit(): Promise<void> {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border-radius: var(--radius-sm);
-  border: 1px dashed var(--tg-theme-hint-color);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-link-color);
+  gap: 6px;
+  border: none;
+  border-radius: 14px;
+  background: var(--ink-1);
+  color: var(--brand);
+}
+.add-tile:active {
+  background: var(--ink-2);
 }
 .add-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
 }
 .hidden-input {
   display: none;
 }
+
+/* --- Нижняя кнопка --- */
 .scroll-pad {
-  height: 12px;
+  height: 8px;
 }
 .sticky-save {
-  padding: 10px 16px calc(var(--safe-bottom) + 10px);
-  border-top: 1px solid var(--tg-theme-secondary-bg-color);
-  background: var(--tg-theme-bg-color);
+  padding: 10px var(--pad) calc(var(--safe-bottom) + 12px);
+  background: var(--ink-0);
 }
 .save {
   width: 100%;
-  min-height: var(--tap);
-  border-radius: var(--radius);
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
+  height: 50px;
+  border-radius: var(--r-field);
+  background: var(--brand);
+  color: var(--brand-ink);
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 650;
 }
 .save:disabled {
-  opacity: 0.5;
-}
-
-/* --- Голосовой ввод --- */
-.inline .field {
-  flex: 1;
-}
-.add-btn:disabled {
-  opacity: 0.5;
-}
-.dictate:disabled {
-  opacity: 0.6;
-}
-.dictate-wait .hint {
-  flex: 1;
-  font-size: 13px;
-}
-.dictate-wait .link {
-  color: var(--tg-theme-link-color);
-  font-weight: 700;
-  min-height: var(--tap);
+  opacity: 0.45;
 }
 </style>

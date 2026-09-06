@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import ItemCard from '@/components/ItemCard.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
 import SellPriceSheet from '@/components/SellPriceSheet.vue'
+import Money from '@/shared/ui/Money.vue'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
+import { useAnalyticsStore } from '@/stores/analytics'
 import { useToastStore } from '@/stores/toast'
 import type { Currency, ItemOut, ItemStatus } from '@/shared/api/types'
 import { nextStatus, requiresListPrice, requiresSellingPrice } from '@/shared/utils/status'
@@ -15,12 +17,35 @@ import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
 const items = useItemsStore()
 const toast = useToastStore()
+const analytics = useAnalyticsStore()
+
+/**
+ * Шапка показывает не слоган, а цифру, ради которой сюда заходят. Владельцу
+ * и аналитику — заработок, сотруднику — сколько вещей в работе: денег он не
+ * видит по роли, и пустая плашка была бы обманом.
+ */
+const heroLabel = computed(() =>
+  session.canSeeFinance ? 'Заработано всего' : 'Вещей в работе',
+)
+const heroValue = computed(() => analytics.summary?.total_profit ?? null)
+const activeCount = computed(() => analytics.summary?.active_count ?? null)
+const staleCount = computed(() => analytics.summary?.stale.count ?? 0)
+const staleDays = computed(() => analytics.summary?.stale.threshold_days ?? 60)
+
+/** Тап по «залежалось» — тот же drill-down, что из аналитики. */
+function showStale(): void {
+  const ids = analytics.summary?.stale.item_ids ?? []
+  if (!ids.length) return
+  hapticImpact('light')
+  void items.setFilters({ ids, status: null, search: null })
+}
 
 const session = useSessionStore()
 const { items: itemList, loading, loadingMore, error, isEmpty } = storeToRefs(items)
 
-// Высота строки = карточка (120) + зазор (8). Обе величины в CSS ItemCard
-// и .row ниже; расходиться им нельзя, иначе виртуальный список поедет.
+// Высота строки = карточка (118) + зазор (10). Обе величины заданы в CSS —
+// в ItemCard и в .row ниже. Расходиться им нельзя: виртуальный список
+// считает позиции по этому числу, и при рассинхроне прокрутка поедет.
 const ROW_HEIGHT = 128
 const { list, containerProps, wrapperProps } = useVirtualList(itemList, {
   itemHeight: ROW_HEIGHT,
@@ -138,6 +163,9 @@ watch(
 onMounted(() => {
   consumeAndApply()
   if (itemList.value.length === 0) void items.loadFirst()
+  // Сводка для шапки. Тянем один раз: числа меняются медленно, а список
+  // должен появиться раньше — поэтому запрос идёт следом, а не блокирует.
+  if (analytics.summary === null) void analytics.fetch()
 })
 
 document.addEventListener('visibilitychange', onVisible)
@@ -150,44 +178,77 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="screen">
-    <header class="topbar">
-      <div class="search-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18">
-          <path
-            fill="currentColor"
-            d="M10 4a6 6 0 1 0 3.5 10.9l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z"
-          />
-        </svg>
-        <input
-          v-model="search"
-          class="search-input"
-          type="search"
-          inputmode="search"
-          placeholder="Поиск: SKU, бренд, название"
-        />
+    <header class="head">
+      <div class="head-top">
+        <span class="store">
+          <span class="store-dot" aria-hidden="true" />
+          {{ session.currentStore?.name ?? 'Склад' }}
+        </span>
+        <button
+          class="icon-btn"
+          :class="{ on: items.viewArchived }"
+          :aria-label="items.viewArchived ? 'Показать активные' : 'Показать архив'"
+          @click="toggleArchive"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+               stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7h18v4H3zM5 11v9h14v-9M10 15h4" />
+          </svg>
+        </button>
       </div>
-      <button
-        class="filter-btn tap"
-        :class="{ active: items.viewArchived }"
-        :aria-label="items.viewArchived ? 'Показать активные' : 'Показать архив'"
-        @click="toggleArchive"
-      >
-        <svg viewBox="0 0 24 24" width="22" height="22">
-          <path fill="currentColor" d="M3 4h18v4H3V4zm2 6h14l-1 10H6L5 10zm4 2v6h6v-2h-4v-4H9z" />
+
+      <p class="hero-label">{{ heroLabel }}</p>
+      <p class="hero-value">
+        <Money v-if="session.canSeeFinance && heroValue !== null" :value="heroValue" strong />
+        <template v-else-if="!session.canSeeFinance">{{ activeCount ?? '—' }}</template>
+        <template v-else>—</template>
+      </p>
+      <p v-if="session.canSeeFinance" class="hero-sub">
+        <span v-if="activeCount !== null">В работе <b>{{ activeCount }}</b></span>
+      </p>
+
+      <div class="find">
+        <div class="field">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.6-3.6" />
+          </svg>
+          <input
+            v-model="search"
+            class="field-input"
+            type="search"
+            inputmode="search"
+            placeholder="Поиск по складу"
+          />
+        </div>
+        <button
+          class="icon-btn filter"
+          :class="{ on: items.activeFilterCount > 0 }"
+          aria-label="Фильтры"
+          @click="filterOpen = true"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+               stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          <span v-if="items.activeFilterCount > 0" class="dot num">{{ items.activeFilterCount }}</span>
+        </button>
+        <button v-if="!items.viewArchived" class="add" aria-label="Добавить вещь" @click="openCreate">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+               stroke-width="2.3" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </div>
+
+      <button v-if="staleCount > 0 && !items.viewArchived" class="stale" @click="showStale">
+        <span class="stale-n">{{ staleCount }}</span>
+        <span class="stale-t">{{ staleCount === 1 ? 'вещь лежит' : 'вещей лежат' }}
+          дольше {{ staleDays }} дней</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m9 6 6 6-6 6" />
         </svg>
-      </button>
-      <button
-        class="filter-btn tap"
-        :class="{ active: items.activeFilterCount > 0 }"
-        aria-label="Фильтры"
-        @click="filterOpen = true"
-      >
-        <svg viewBox="0 0 24 24" width="22" height="22">
-          <path fill="currentColor" d="M3 5h18v2l-7 7v5l-4 2v-7L3 7V5z" />
-        </svg>
-        <span v-if="items.activeFilterCount > 0" class="filter-badge num">{{
-          items.activeFilterCount
-        }}</span>
       </button>
     </header>
 
@@ -231,11 +292,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <button v-if="!items.viewArchived" class="fab" aria-label="Добавить товар" @click="openCreate">
-      <svg viewBox="0 0 24 24" width="28" height="28">
-        <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z" />
-      </svg>
-    </button>
 
     <FilterSheet
       v-model="filterOpen"
@@ -255,85 +311,185 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
 }
-.topbar {
+/* Шапка: сначала цифра, ради которой открывают экран, потом поиск.
+   Референс держал тут слоган — у склада слоган не нужен, нужны деньги. */
+.head {
+  padding: calc(var(--safe-top) + 10px) var(--pad) 4px;
+  flex: none;
+}
+.head-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: calc(var(--safe-top) + 10px) 12px 10px;
-  background: var(--tg-theme-bg-color);
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  margin-bottom: 16px;
 }
-.search-wrap {
-  position: relative;
-  flex: 1;
-  display: flex;
+.store {
+  display: inline-flex;
   align-items: center;
+  gap: 7px;
+  max-width: 70%;
+  padding: 7px 13px 7px 10px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.search-icon {
-  position: absolute;
-  left: 10px;
-  color: var(--tg-theme-hint-color);
-  pointer-events: none;
+.store-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--s-ship);
 }
-.search-input {
-  width: 100%;
-  min-height: var(--tap);
-  padding: 0 12px 0 34px;
-  border-radius: var(--radius);
-  border: none;
-  background: var(--tg-theme-secondary-bg-color);
-  outline: none;
-}
-.filter-btn {
+.icon-btn {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-1);
+  display: grid;
+  place-items: center;
 }
-.filter-btn.active {
-  color: var(--tg-theme-link-color);
+.icon-btn.on {
+  background: var(--ink-3);
+  color: var(--fg-0);
 }
-.filter-badge {
+.head-top .icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+.dot {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 5px;
+  right: 5px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--tg-theme-link-color);
-  color: #fff;
+  background: var(--brand);
+  color: var(--brand-ink);
   font-size: 10px;
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  line-height: 16px;
+  text-align: center;
 }
-.drill-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 14px;
+.hero-label {
+  margin: 0 0 6px;
   font-size: 13px;
-  background: color-mix(in srgb, var(--tg-theme-link-color) 12%, transparent);
+  color: var(--fg-1);
 }
-.drill-clear {
-  color: var(--tg-theme-link-color);
+.hero-value {
+  margin: 0;
+  font-size: 40px;
+  line-height: 42px;
   font-weight: 700;
-  padding: 6px;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.hero-sub {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--fg-1);
+}
+.hero-sub b {
+  color: var(--fg-0);
+  font-weight: 650;
+}
+.find {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0 0;
+}
+.field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 14px;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-2);
+}
+.field-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-0);
+  /* 16px обязателен: на меньшем iOS зумит страницу при фокусе. */
+  font-size: 16px;
+}
+.field-input::placeholder {
+  color: var(--fg-2);
+}
+.field-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.find .icon-btn {
+  height: 50px;
+  width: 50px;
+}
+.add {
+  flex: none;
+  width: 50px;
+  height: 50px;
+  border-radius: var(--r-field);
+  background: var(--brand);
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+}
+.add:active {
+  opacity: 0.85;
+}
+/* Полоса «залежалось»: не украшение, а единственная подсказка, что делать. */
+.stale {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-radius: var(--r-field);
+  background: color-mix(in srgb, var(--s-prep) 13%, transparent);
+  color: var(--fg-0);
+  text-align: left;
+}
+.stale-n {
+  flex: none;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--s-prep);
+  font-variant-numeric: tabular-nums;
+}
+.stale-t {
+  flex: 1;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--fg-1);
+}
+.stale svg {
+  flex: none;
+  color: var(--fg-2);
 }
 .list {
   flex: 1;
   overflow-y: auto;
-  /* По бокам уже, чем сверху: строке нужна ширина под название и цену. */
-  padding: 12px 8px;
+  /* Поля совпадают с шапкой: карточки и герой стоят на одной вертикали. */
+  padding: 8px var(--pad) calc(var(--nav-height) + var(--safe-bottom) + 12px);
 }
 .row {
-  padding-bottom: 8px;
+  padding-bottom: 10px;
 }
 .state {
   flex: 1;
@@ -353,20 +509,5 @@ onBeforeUnmount(() => {
 .retry {
   color: var(--tg-theme-link-color);
   font-weight: 700;
-}
-.fab {
-  position: fixed;
-  right: 16px;
-  bottom: calc(var(--nav-height) + var(--safe-bottom) + 16px);
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  z-index: 40;
 }
 </style>

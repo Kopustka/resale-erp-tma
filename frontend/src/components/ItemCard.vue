@@ -2,33 +2,39 @@
 /**
  * Строка товара в списке.
  *
- * Свайпов здесь нет намеренно. Жест был неочевиден (о нём нужно догадаться),
- * конфликтовал с вертикальной прокруткой и срабатывал вхолостую при быстром
- * пролистывании. Вместо него — явная кнопка перехода в следующий статус.
+ * Фотография здесь — главный актив, а не иллюстрация: вещь узнают по снимку
+ * раньше, чем прочитают название. Поэтому кадр вертикальный, во всю высоту
+ * строки, а текст и цена выстроены рядом столбцом.
  *
- * В кнопке только целевой статус, без текущего: текущий уже написан бейджем
- * справа сверху, и полная надпись «Сфотографирован → Выставлен» не влезала
- * в строку рядом с ценой — обрезалась многоточием. Кнопка повторяет форму
- * бейджа, отличаясь только цветом, поэтому пара читается как «сейчас — и
- * куда дальше», а не как два разных элемента.
+ * Цветная полоса под фото повторяет цвет этапа. Она нужна, чтобы список
+ * читался боковым зрением при прокрутке: глаз ловит цвет, а не слово.
  *
- * Архивация уехала в карточку товара: в строке ей не место, если жестов нет,
- * а второй кнопкой рядом со статусом легко попасть по ошибке.
+ * Свайпов нет намеренно — жест был неочевиден, конфликтовал с прокруткой и
+ * срабатывал вхолостую. Переход в следующий этап делает явная кнопка.
+ *
+ * Высота строки фиксирована: её знает ROW_HEIGHT виртуального списка в
+ * InventoryScreen. Поэтому каждая строка внутри тоже имеет заданную высоту,
+ * а название обрезается в одну строку вместо переноса.
  */
 import { computed } from 'vue'
 import type { ItemOut } from '@/shared/api/types'
 import AuthImage from '@/shared/ui/AuthImage.vue'
-import StatusBadge from '@/shared/ui/StatusBadge.vue'
 import Money from '@/shared/ui/Money.vue'
-import { isSoldLike, nextStatus, STATUS_LABELS } from '@/shared/utils/status'
+import {
+  ACTION_LABELS,
+  isSoldLike,
+  nextStatus,
+  STATUS_LABELS,
+  STATUS_VARS,
+} from '@/shared/utils/status'
 
 const props = withDefaults(
   defineProps<{
     item: ItemOut
     showFinance: boolean
-    /** В архиве статусы не двигаем — кнопку прячем. */
+    /** В архиве этапы не двигаем — кнопку прячем. */
     actionable?: boolean
-    /** Идёт фоновая AI-генерация названия/описания. */
+    /** Идёт фоновая генерация названия. */
     generating?: boolean
   }>(),
   { actionable: true, generating: false },
@@ -37,13 +43,14 @@ const emit = defineEmits<{ next: []; open: [] }>()
 
 const soldLike = computed(() => isSoldLike(props.item.status))
 const next = computed(() => nextStatus(props.item.status))
+/** На кнопке — действие, на бейдже — состояние. */
+const nextAction = computed(() => (next.value ? ACTION_LABELS[next.value] : ''))
 const nextLabel = computed(() => (next.value ? STATUS_LABELS[next.value] : ''))
 const showStep = computed(() => props.actionable && next.value !== null)
+const statusVar = computed(() => STATUS_VARS[props.item.status])
+const statusLabel = computed(() => STATUS_LABELS[props.item.status])
 
-/**
- * Бренд у вещи может быть не заполнен, и шаблон «бренд · категория · размер»
- * начинался с висящей точки: « · Лонгслив · S». Собираем из непустых частей.
- */
+/** Бренд, категория и размер одной строкой, без висящих разделителей. */
 const subtitle = computed(() =>
   [props.item.brand, props.item.category, props.item.size]
     .map((x) => (x ?? '').trim())
@@ -51,25 +58,19 @@ const subtitle = computed(() =>
     .join(' · '),
 )
 
-// Цена показывается в базовой валюте склада (сведённая):
-// продано -> фактическая продажа; иначе -> цена объявления или себестоимость.
 const priceValue = computed<number | null | undefined>(() =>
   soldLike.value
     ? props.item.selling_price_base
     : (props.item.list_price_base ?? props.item.selling_price_base ?? props.item.cost_price_base),
 )
 
-/** Цена до скидки: показываем зачёркнутой рядом с новой. */
 const oldPriceValue = computed<number | null>(() =>
   !soldLike.value && props.item.price_before_discount != null
     ? props.item.price_before_discount
     : null,
 )
 
-/**
- * Нажатие на кнопку не должно открывать карточку: цель разная, а кнопка
- * лежит внутри кликабельной строки.
- */
+/** Кнопка лежит внутри кликабельной строки — цели разные, всплытие гасим. */
 function onStep(e: Event): void {
   e.stopPropagation()
   emit('next')
@@ -77,8 +78,12 @@ function onStep(e: Event): void {
 </script>
 
 <template>
-  <div class="card" @click="emit('open')">
-    <div class="photo">
+  <article
+    class="card"
+    :style="{ '--s': `var(--s-${statusVar})`, '--s-ink': `var(--s-${statusVar}-ink)` }"
+    @click="emit('open')"
+  >
+    <div class="shot">
       <AuthImage
         :item-id="item.id"
         :index="0"
@@ -86,190 +91,213 @@ function onStep(e: Event): void {
         :alt="item.title"
         :width="400"
       />
+      <span class="spine" aria-hidden="true" />
     </div>
-    <div class="body">
-      <div class="row-top">
-        <span class="sku num">{{ item.sku }}</span>
-        <StatusBadge :status="item.status" />
-      </div>
-      <div v-if="generating" class="title-line gen-shimmer">✨ Генерирую название…</div>
-      <div v-else class="title-line">{{ item.title }}</div>
-      <div v-if="generating" class="cat gen-shimmer gen-small">описание пишется по фото</div>
-      <div v-else class="cat hint">{{ subtitle }}</div>
 
-      <div class="bottom-row">
+    <div class="body">
+      <div class="head">
+        <span class="sku">{{ item.sku }}</span>
+        <span class="chip">{{ statusLabel }}</span>
+      </div>
+
+      <p v-if="generating" class="name gen">Генерирую название…</p>
+      <p v-else class="name">{{ item.title }}</p>
+      <p class="sub">{{ generating ? 'описание пишется по фото' : subtitle }}</p>
+
+      <div class="foot">
+        <span v-if="showFinance" class="price" :class="{ sold: soldLike }">
+          <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
+          <Money :value="priceValue" strong />
+        </span>
+        <span v-else />
+
         <button
           v-if="showStep"
-          class="step tap"
-          :aria-label="`Перевести из «${STATUS_LABELS[item.status]}» в «${nextLabel}»`"
+          class="step"
+          :aria-label="`Перевести из «${statusLabel}» в «${nextLabel}»`"
           @click="onStep"
         >
-          <span class="step-arrow" aria-hidden="true">→</span>
-          <span class="step-next">{{ nextLabel }}</span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
+               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h12M12 6l6 6-6 6" />
+          </svg>
+          <span class="step-t">{{ nextAction }}</span>
         </button>
-        <span v-else class="step-empty"></span>
-
-        <span v-if="showFinance" class="price-row">
-          <Money v-if="oldPriceValue !== null" :value="oldPriceValue" class="was" />
-          <Money :value="priceValue" :colored="soldLike" strong />
-        </span>
       </div>
     </div>
-  </div>
+  </article>
 </template>
 
 <style scoped>
-/*
- * Строка — серая плашка, как блоки в настройках и админке. Раньше фон
- * карточки совпадал с фоном экрана, и список читался сплошным полотном.
- *
- * Высота карточки фиксирована: её знает ROW_HEIGHT виртуального списка в
- * InventoryScreen (карточка + зазор строки). Поэтому высота КАЖДОЙ строки
- * внутри задана явно, а сами строки не сжимаются (flex: none).
- *
- * Без этого вёрстка держалась на метриках шрифта: в макете на Linux всё
- * помещалось, а на iPhone с SF Pro строки оказались выше, сумма превысила
- * доступную высоту, и flex сжал текст — название обрезалось сверху и снизу
- * и наезжало на категорию.
- */
 .card {
-  position: relative;
   display: flex;
-  gap: 10px;
-  padding: 12px 10px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  height: 120px;
+  gap: 12px;
+  height: 118px;
+  padding: 11px;
+  border-radius: var(--r-card);
+  background: var(--ink-1);
   user-select: none;
   -webkit-user-select: none;
 }
-.photo {
+.shot {
+  position: relative;
   flex: none;
-  width: 80px;
-  height: 96px; /* вся высота содержимого: 120 − 2×12 */
+  width: 86px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: var(--ink-2);
   pointer-events: none;
+}
+.shot :deep(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* Полоса цвета этапа: список читается боковым зрением при прокрутке. */
+.spine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--s);
 }
 .body {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  overflow: hidden;
 }
-.row-top {
-  flex: none;
-  height: 20px;
+.head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  height: 18px;
   pointer-events: none;
 }
 .sku {
-  font-size: 12px;
-  color: var(--tg-theme-hint-color);
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
 }
-.title-line {
+.chip {
   flex: none;
-  height: 20px;
-  font-size: 16px;
-  line-height: 20px;
+  font-size: 10.5px;
   font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-}
-.cat {
-  flex: none;
-  height: 16px;
-  font-size: 13px;
-  line-height: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-}
-
-.bottom-row {
-  flex: none;
-  height: 22px;
-  margin-top: auto; /* остаток высоты уходит сюда, а не в сжатие текста */
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-/*
- * Повторяет геометрию StatusBadge (шрифт, скругление, отступы, заливка),
- * чтобы бейдж статуса и кнопка перехода выглядели одной парой.
- */
-.step {
-  /* Сжимается первой: на узком экране обрезать название статуса не жалко,
-     а цену пользователь должен видеть целиком. */
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
   line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
   white-space: nowrap;
-  color: var(--tg-theme-link-color);
-  /* К фону темы, а не к прозрачности: на серой плашке альфа-заливка
-     сливается с подложкой и чип теряет очертания. */
-  background: color-mix(in srgb, var(--tg-theme-link-color) 18%, var(--tg-theme-bg-color));
+  /* Надпись отдельным токеном: сам цвет этапа на своей заливке не читается. */
+  color: var(--s-ink);
+  background: color-mix(in srgb, var(--s) 15%, transparent);
 }
-.step:active {
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
-}
-.step-arrow {
-  flex: none;
-  opacity: 0.75;
-}
-.step-next {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.step-empty {
-  flex: 1;
-}
-.price-row {
-  flex: none;
+.name {
+  height: 20px;
+  margin: 5px 0 2px;
   font-size: 16px;
   line-height: 20px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }
-/* Индикатор фоновой AI-генерации: мягкое «дыхание» текста. */
-.gen-shimmer {
-  color: var(--tg-theme-link-color);
-  animation: gen-pulse 1.4s ease-in-out infinite;
+.sub {
+  height: 16px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
-.gen-small {
-  font-size: 13px;
+.gen {
+  color: var(--brand);
+  animation: gen-pulse 1.4s ease-in-out infinite;
 }
 @keyframes gen-pulse {
   0%,
   100% {
-    opacity: 0.45;
+    opacity: 0.5;
   }
   50% {
     opacity: 1;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .gen {
+    animation: none;
+  }
+}
+.foot {
+  margin-top: auto;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.price.sold {
+  color: var(--s-ship);
+}
 .was {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--fg-2);
   text-decoration: line-through;
-  color: var(--tg-theme-hint-color);
-  margin-right: 6px;
+  letter-spacing: 0;
+}
+/* Сжимается первой: обрезать название этапа не жалко, цену — нельзя. */
+.step {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 56%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+  color: var(--fg-0);
   font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.step svg {
+  flex: none;
+  opacity: 0.55;
+}
+.step-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step:active {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+.step:active svg {
+  opacity: 0.8;
 }
 </style>

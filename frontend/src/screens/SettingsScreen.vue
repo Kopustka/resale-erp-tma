@@ -122,8 +122,8 @@ function exportCsv(): void {
     <div class="content no-scrollbar">
       <!-- Текущая роль -->
       <section class="block">
-        <div class="role-line">
-          <span class="hint">Ваша роль</span>
+        <div class="card role-line">
+          <span class="role-label">Ваша роль</span>
           <span class="role-pill">{{ session.role ? ROLE_LABELS[session.role] : '—' }}</span>
         </div>
       </section>
@@ -142,7 +142,7 @@ function exportCsv(): void {
           >
             <div class="store-info">
               <span class="store-name">{{ s.name }}</span>
-              <span class="store-role hint">{{ ROLE_LABELS[s.role] }}</span>
+              <span class="store-role">{{ ROLE_LABELS[s.role] }}</span>
             </div>
             <span v-if="s.id === session.currentStoreId" class="check">
               <svg viewBox="0 0 24 24" width="20" height="20">
@@ -151,7 +151,7 @@ function exportCsv(): void {
             </span>
           </button>
         </div>
-        <p v-else class="hint">Нет доступных складов.</p>
+        <p v-else class="empty">Нет доступных складов.</p>
       </section>
 
       <!-- Команда (только OWNER) -->
@@ -166,23 +166,23 @@ function exportCsv(): void {
           <span class="nav-row-chevron" aria-hidden="true">›</span>
         </button>
 
-        <div v-if="session.membersLoading" class="hint">Загрузка участников…</div>
+        <div v-if="session.membersLoading" class="loading">Загрузка участников…</div>
         <div v-else class="members">
           <div v-for="m in session.members" :key="m.user_id" class="member">
             <div class="m-info">
               <span class="m-name">{{ m.first_name || m.username || '—' }}</span>
-              <span v-if="m.username" class="m-uname hint">@{{ m.username }}</span>
+              <span v-if="m.username" class="m-uname">@{{ m.username }}</span>
             </div>
             <span class="m-role">{{ ROLE_LABELS[m.role] }}</span>
           </div>
         </div>
 
         <!-- Pending инвайты этой сессии -->
-        <div v-if="session.pendingInvites.length" class="pending">
-          <div v-for="inv in session.pendingInvites" :key="inv.id" class="member pending-row">
+        <div v-if="session.pendingInvites.length" class="members pending">
+          <div v-for="inv in session.pendingInvites" :key="inv.id" class="member">
             <div class="m-info">
               <span class="m-name">@{{ inv.username }}</span>
-              <span class="m-uname hint">ожидает · {{ ROLE_LABELS[inv.role] }}</span>
+              <span class="m-uname">ожидает · {{ ROLE_LABELS[inv.role] }}</span>
             </div>
             <button class="revoke" @click="revoke(inv.id)">Отозвать</button>
           </div>
@@ -196,14 +196,14 @@ function exportCsv(): void {
           </div>
           <div class="role-select">
             <button
-              class="role-opt"
+              class="role-opt tap"
               :class="{ sel: inviteRole === 'EMPLOYEE' }"
               @click="inviteRole = 'EMPLOYEE'"
             >
               Сотрудник
             </button>
             <button
-              class="role-opt"
+              class="role-opt tap"
               :class="{ sel: inviteRole === 'ANALYST' }"
               @click="inviteRole = 'ANALYST'"
             >
@@ -219,7 +219,7 @@ function exportCsv(): void {
       <!-- Основная валюта (только OWNER) -->
       <section v-if="session.isOwner" class="block">
         <h2 class="block-title">Основная валюта</h2>
-        <p class="hint channel-note">
+        <p class="note">
           Валюта учёта склада: в неё пересчитываются все суммы и аналитика.
           Введённые цены сохраняются и в исходной валюте.
         </p>
@@ -242,7 +242,7 @@ function exportCsv(): void {
       <section class="block">
         <h2 class="block-title">Данные</h2>
         <button class="btn-secondary tap" @click="exportCsv">Выгрузить в CSV</button>
-        <p class="hint export-note">Отчёт придёт сообщением от бота.</p>
+        <p class="note export-note">Отчёт придёт сообщением от бота.</p>
       </section>
 
       <div class="bottom-pad" />
@@ -255,90 +255,181 @@ function exportCsv(): void {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: var(--ink-0);
+  color: var(--fg-0);
 }
+
+/* --- Шапка --- */
 .head {
-  padding: calc(var(--safe-top) + 12px) 16px 10px;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  padding: calc(var(--safe-top) + 12px) var(--pad) 8px;
+  background: var(--ink-0);
 }
 .title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
+
+/* --- Секции --- */
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px calc(var(--nav-height) + var(--safe-bottom));
+  padding: 8px var(--pad) calc(var(--nav-height) + var(--safe-bottom));
 }
 .block {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  margin-bottom: 20px;
 }
 .block-title {
-  margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--tg-theme-hint-color);
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--fg-0);
 }
+.card {
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--ink-1);
+}
+.note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-2);
+}
+.empty,
+.loading {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fg-1);
+}
+.loading {
+  margin-top: 12px;
+}
+
+/* --- Роль --- */
 .role-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+.role-label {
+  font-size: 14px;
+  color: var(--fg-1);
 }
 .role-pill {
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
+  padding: 7px 14px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-0);
+  font-size: 13.5px;
+  font-weight: 650;
 }
+
+/* --- Склады --- */
 .store-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap);
 }
 .store-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: var(--tap);
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  border: 1px solid transparent;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border-radius: var(--r-card);
+  background: var(--ink-1);
+  color: var(--fg-0);
   text-align: left;
 }
 .store-row.active {
-  border-color: var(--tg-theme-link-color);
+  background: var(--ink-3);
+}
+.store-row:disabled {
+  opacity: 0.6;
 }
 .store-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 .store-name {
-  font-weight: 600;
+  font-size: 15.5px;
+  font-weight: 650;
 }
 .store-role {
-  font-size: 12px;
+  font-size: 12.5px;
+  color: var(--fg-2);
 }
 .check {
-  color: var(--tg-theme-link-color);
+  flex: none;
+  display: flex;
+  color: var(--brand);
 }
-.members,
-.pending {
+
+/* --- Строка-переход --- */
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border-radius: var(--r-card);
+  background: var(--ink-1);
+  text-align: left;
+}
+.nav-row:active {
+  background: var(--ink-2);
+}
+.nav-row-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  min-width: 0;
+}
+.nav-row-title {
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--fg-0);
+}
+.nav-row-sub {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--fg-2);
+}
+.nav-row-chevron {
+  flex: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--fg-2);
+}
+
+/* --- Участники --- */
+.members {
+  margin-top: var(--gap);
+  padding: 2px 16px;
+  border-radius: var(--r-card);
+  background: var(--ink-1);
+}
+.members:empty {
+  display: none;
 }
 .member {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  gap: 12px;
+  padding: 12px 0;
+}
+.member + .member {
+  border-top: 1px solid var(--ink-2);
 }
 .m-info {
   display: flex;
@@ -347,258 +438,137 @@ function exportCsv(): void {
   min-width: 0;
 }
 .m-name {
+  font-size: 15px;
   font-weight: 600;
 }
 .m-uname {
-  font-size: 12px;
+  font-size: 12.5px;
+  color: var(--fg-2);
 }
 .m-role {
+  flex: none;
   font-size: 13px;
   font-weight: 600;
-  color: var(--tg-theme-hint-color);
-}
-.pending {
-  margin-top: 6px;
-}
-.pending-row {
-  opacity: 0.9;
+  color: var(--fg-1);
 }
 .revoke {
-  color: var(--tg-theme-destructive-text-color);
-  font-weight: 700;
+  flex: none;
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--danger);
   font-size: 13px;
-  padding: 8px;
+  font-weight: 650;
 }
+
+/* --- Приглашение --- */
 .invite {
-  margin-top: 16px;
+  margin-top: var(--gap);
 }
 .lbl {
   display: block;
-  font-size: 13px;
-  color: var(--tg-theme-hint-color);
   margin-bottom: 6px;
+  font-size: 12.5px;
+  color: var(--fg-2);
 }
 .field {
   width: 100%;
-  min-height: var(--tap);
-  padding: 0 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--tg-theme-secondary-bg-color);
-  background: var(--tg-theme-secondary-bg-color);
+  height: 50px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-0);
+  font-size: 16px;
   outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field::placeholder {
+  color: var(--fg-2);
+}
+.field:focus {
+  background: var(--ink-2);
 }
 .role-select {
   display: flex;
   gap: 8px;
-  margin: 10px 0;
+  margin: 10px 0 12px;
 }
 .role-opt {
   flex: 1;
-  min-height: var(--tap);
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  font-weight: 600;
-  border: 1px solid transparent;
+  height: 44px;
+  min-height: 44px;
+  border-radius: var(--r-pill);
+  background: var(--ink-1);
+  color: var(--fg-1);
+  font-size: 14px;
+  font-weight: 650;
 }
 .role-opt.sel {
-  border-color: var(--tg-theme-link-color);
-  color: var(--tg-theme-link-color);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
-.btn-primary {
-  width: 100%;
-  min-height: var(--tap);
-  border-radius: var(--radius);
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
-  font-weight: 700;
-}
-.btn-primary:disabled {
-  opacity: 0.5;
-}
+
+/* --- Кнопки --- */
+.btn-primary,
 .btn-secondary {
   width: 100%;
-  min-height: var(--tap);
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
-  font-weight: 700;
+  height: 50px;
+  min-height: 50px;
+  border-radius: var(--r-field);
+  font-size: 16px;
+  font-weight: 650;
 }
-.export-note {
-  font-size: 12px;
-  margin: 8px 0 0;
+.btn-primary {
+  background: var(--brand);
+  color: var(--brand-ink);
 }
-.channel-note {
-  font-size: 12px;
-  margin: 0 0 12px;
+.btn-primary:disabled {
+  opacity: 0.45;
 }
-.channel-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
+.btn-secondary {
+  background: var(--ink-2);
+  color: var(--fg-0);
 }
-.channel-actions .btn-primary,
-.channel-actions .btn-secondary {
-  flex: 1;
-}
-.channel-hint {
-  font-size: 12px;
-  margin: 10px 0 0;
-}
-.channel-variants {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.channel-hint code {
-  font-family: ui-monospace, Menlo, monospace;
-  background: var(--tg-theme-secondary-bg-color);
-  padding: 1px 4px;
-  border-radius: 4px;
-}
-.bottom-pad {
-  height: 16px;
-}
-.nav-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: var(--tap);
-  margin-top: 14px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  text-align: left;
-}
-.nav-row-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.nav-row-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--tg-theme-text-color);
-}
-.nav-row-sub {
-  font-size: 12px;
-  color: var(--tg-theme-hint-color);
-}
-.nav-row-chevron {
-  font-size: 22px;
-  line-height: 1;
-  color: var(--tg-theme-hint-color);
-}
+
+/* --- Валюта --- */
 .cur-row {
   display: flex;
-  gap: var(--gap);
+  gap: 8px;
 }
 .cur-opt {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-height: var(--tap);
-  padding: 8px 4px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
+  justify-content: center;
+  gap: 6px;
+  height: 46px;
+  min-height: 46px;
+  border-radius: var(--r-pill);
+  background: var(--ink-1);
+  color: var(--fg-1);
 }
 .cur-opt.sel {
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 .cur-opt:disabled {
   opacity: 0.6;
 }
 .cur-code {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 650;
 }
 .cur-sym {
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.75;
 }
-.wm-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: var(--tap);
-  margin-top: 14px;
+
+.export-note {
+  margin: 10px 0 0;
 }
-.wm-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.wm-title {
-  font-size: 15px;
-  font-weight: 700;
-}
-.wm-sub {
-  font-size: 12px;
-  color: var(--tg-theme-hint-color);
-  line-height: 1.4;
-}
-.wm-check {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  accent-color: var(--tg-theme-button-color);
-}
-.save-row {
-  width: 100%;
-  margin-top: 14px;
-}
-.bump-days {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.field.days {
-  width: 90px;
-  text-align: center;
-}
-.dt-area {
-  margin-top: 10px;
-  resize: vertical;
-  font: inherit;
-}
-.dt-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.dt-chip {
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-link-color);
-  font-size: 12px;
-  font-weight: 700;
-}
-.dt-preview {
-  margin-top: 10px;
-}
-.dt-preview-body {
-  margin-top: 4px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  font-size: 14px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.dt-actions {
-  display: flex;
-  gap: var(--gap);
-  margin-top: 12px;
+.bottom-pad {
+  height: 16px;
 }
 </style>

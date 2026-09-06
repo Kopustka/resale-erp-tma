@@ -3,37 +3,100 @@
    Значения по умолчанию заданы на случай отсутствия темы (перекрываются JS).
    -------------------------------------------------------------------------- */
 :root {
-  --tg-theme-bg-color: #ffffff;
-  --tg-theme-text-color: #000000;
-  --tg-theme-hint-color: #707579;
-  --tg-theme-link-color: #2481cc;
-  --tg-theme-button-color: #2481cc;
-  --tg-theme-button-text-color: #ffffff;
-  --tg-theme-secondary-bg-color: #f0f0f0;
-  --tg-theme-header-bg-color: #ffffff;
-  --tg-theme-accent-text-color: #2481cc;
-  --tg-theme-section-bg-color: #ffffff;
-  --tg-theme-destructive-text-color: #df3f40;
+  /* ------------------------------------------------------------------------
+     Палитра приложения. Не берём цвета Telegram: у мессенджера свои темы под
+     переписку, и приложение в них растворялось — выглядело как системный
+     экран, а не как продукт. Держим собственный холодный «студийный» фон:
+     на нём одежда на фотографиях читается лучше всего.
+     От Telegram берём только светло/темно (data-theme) и безопасные отступы.
+     ------------------------------------------------------------------------ */
+  --ink-0: #0E0F12;   /* фон экрана */
+  --ink-1: #17191D;   /* карточка, поле ввода */
+  --ink-2: #1F2228;   /* плашка, чип */
+  --ink-3: #2A2E36;   /* активное состояние, кнопка-шаг */
+  --fg-0: #F2F3F5;    /* основной текст */
+  --fg-1: #A8AEB8;    /* вторичный */
+  --fg-2: #7B828E;    /* подписи, артикулы */
 
-  /* Служебные акценты статусов (fallback). */
-  --accent-positive: #34c759;
-  --accent-negative: #ff3b30;
+  --brand: #4C6FFF;
+  --brand-ink: #ffffff;
+  --danger: #FF4D4F;
 
-  /* Геометрия — строго плоская, скругления <= 8px. */
-  --radius: 8px;
-  --radius-sm: 6px;
+  /* Цвета этапов: серый → янтарь → голубой → синий → зелёный.
+     Две переменные на этап не прихоть. Заливка чипа — тот же цвет с альфой
+     15%, и текст поверх неё обязан читаться. Проверка контраста показала,
+     что «куплен» и «выставлен» на своей заливке давали 3.6 при норме 4.5, а
+     в светлой теме чипы проваливались до 1.7 — то есть были нечитаемы.
+     Поэтому -ink это цвет НАДПИСИ, а сам --s-* остаётся для точки и полосы,
+     где контраст к тексту не требуется. */
+  --s-bought: #8A9099;
+  --s-prep: #F0A02A;
+  --s-photo: #4CC2FF;
+  --s-listed: #4C6FFF;
+  --s-ship: #3FCF8E;
+
+  --s-bought-ink: #8F959E;
+  --s-prep-ink: #F0A02A;
+  --s-photo-ink: #4CC2FF;
+  --s-listed-ink: #748FFF;
+  --s-ship-ink: #3FCF8E;
+
+  /* Геометрия: крупные скругления, шкала кратна 2. */
+  --r-card: 20px;
+  --r-field: 16px;
+  --r-tile: 18px;
+  --r-sm: 12px;
+  --r-pill: 999px;
   --gap: 12px;
+  --pad: 16px;
   --tap: 44px;
-  --nav-height: 56px;
+  --nav-height: 62px;
 
-  /* Отступ = максимум из выреза устройства (env) и инсета Telegram
-     (--tg-safe-*, задаётся из JS; в fullscreen учитывает кнопки Telegram). */
+  /* Совместимость: старые компоненты и отложенный код читают переменные
+     Telegram. Перенаправляем их на палитру выше — интерфейс поднимается
+     целиком, без правки каждого файла. */
+  --tg-theme-bg-color: var(--ink-0);
+  --tg-theme-text-color: var(--fg-0);
+  --tg-theme-hint-color: var(--fg-1);
+  --tg-theme-link-color: var(--brand);
+  --tg-theme-button-color: var(--brand);
+  --tg-theme-button-text-color: var(--brand-ink);
+  --tg-theme-secondary-bg-color: var(--ink-1);
+  --tg-theme-header-bg-color: var(--ink-0);
+  --tg-theme-accent-text-color: var(--brand);
+  --tg-theme-section-bg-color: var(--ink-1);
+  --tg-theme-destructive-text-color: var(--danger);
+  --accent-positive: var(--s-ship);
+  --accent-negative: var(--danger);
+  --radius: var(--r-card);
+  --radius-sm: var(--r-sm);
+
   --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px));
   --safe-left: max(env(safe-area-inset-left, 0px), var(--tg-safe-left, 0px));
   --safe-right: max(env(safe-area-inset-right, 0px), var(--tg-safe-right, 0px));
 
-  color-scheme: light dark;
+  color-scheme: dark;
+}
+
+/* Светлая тема — та же структура, инвертированные плоскости. Не «дневной
+   режим по остаточному принципу»: контраст проверен на тех же экранах. */
+:root[data-theme='light'] {
+  --ink-0: #FFFFFF;
+  --ink-1: #F4F5F7;
+  --ink-2: #EAECEF;
+  --ink-3: #DDE0E5;
+  --fg-0: #0E0F12;
+  --fg-1: #5B626D;
+  --fg-2: #666E78;
+  /* На белом те же оттенки слишком светлы: акцент и надписи чипов темнее. */
+  --brand: #385FFF;
+  --s-bought-ink: #5D636C;
+  --s-prep-ink: #855707;
+  --s-photo-ink: #006297;
+  --s-listed-ink: #1A47FF;
+  --s-ship-ink: #1C704B;
+  color-scheme: light;
 }
 
 *,

@@ -4,7 +4,9 @@ import type { ItemStatus } from '@/shared/api/types'
 export const STATUS_LABELS: Record<ItemStatus, string> = {
   BOUGHT: 'Куплен',
   PREPARING: 'Подготовка',
-  PHOTOGRAPHED: 'Сфотографирован',
+  // «Сфотографирован» — пятнадцать символов, они не влезали ни в чип, ни в
+  // кнопку перехода и всюду обрезались многоточием.
+  PHOTOGRAPHED: 'Отснято',
   LISTED: 'Выставлен',
   SHIPPED: 'Отправлен',
 }
@@ -14,11 +16,11 @@ export const STATUS_LABELS: Record<ItemStatus, string> = {
  * Значения приглушённые, чтобы держаться плоского минимализма.
  */
 export const STATUS_COLORS: Record<ItemStatus, string> = {
-  BOUGHT: '#8e8e93',
-  PREPARING: '#ff9500',
-  PHOTOGRAPHED: '#5ac8fa',
-  LISTED: '#2481cc',
-  SHIPPED: '#34c759',
+  BOUGHT: '#8A9099',
+  PREPARING: '#F0A02A',
+  PHOTOGRAPHED: '#4CC2FF',
+  LISTED: '#4C6FFF',
+  SHIPPED: '#3FCF8E',
 }
 
 /**
@@ -94,4 +96,30 @@ export const SOLD_LIKE: ItemStatus[] = ['SHIPPED']
 
 export function isSoldLike(status: ItemStatus): boolean {
   return SOLD_LIKE.includes(status)
+}
+
+/**
+ * Имя CSS-переменной этапа. Компонент подставляет `var(--s-<vars>)` для точки
+ * и полосы и `var(--s-<vars>-ink)` для надписи: на своей же заливке цвет
+ * этапа не всегда читается, особенно в светлой теме.
+ */
+export const STATUS_VARS: Record<ItemStatus, string> = {
+  BOUGHT: 'bought',
+  PREPARING: 'prep',
+  PHOTOGRAPHED: 'photo',
+  LISTED: 'listed',
+  SHIPPED: 'ship',
+}
+
+/**
+ * Подпись кнопки перехода. Кнопка обещает действие, а не называет состояние:
+ * «Выставить» вместо «Выставлен». Разные слова для одного и того же этапа —
+ * это нормально: на бейдже он свершившийся факт, на кнопке ещё намерение.
+ */
+export const ACTION_LABELS: Record<ItemStatus, string> = {
+  BOUGHT: 'Вернуть',
+  PREPARING: 'В подготовку',
+  PHOTOGRAPHED: 'Отснять',
+  LISTED: 'Выставить',
+  SHIPPED: 'Отправить',
 }

@@ -292,8 +292,8 @@ const photoIndexes = computed(() =>
   <div v-if="item" class="detail">
     <header class="head">
       <button class="close tap" aria-label="Закрыть" @click="closeOverlay">
-        <svg viewBox="0 0 24 24" width="24" height="24">
-          <path fill="currentColor" d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" />
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="none" d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
       </button>
       <div class="head-title">
@@ -303,7 +303,7 @@ const photoIndexes = computed(() =>
     </header>
 
     <div class="scroll no-scrollbar">
-      <!-- Фото -->
+      <!-- Фото: главный актив вещи, поэтому крупная лента во всю ширину -->
       <div v-if="photoIndexes.length" class="photos no-scrollbar">
         <div v-for="i in photoIndexes" :key="i" class="photo">
           <AuthImage
@@ -319,29 +319,38 @@ const photoIndexes = computed(() =>
       <!-- Смена статуса -->
       <section v-if="canEdit && !isArchived" class="block">
         <h2 class="block-title">Статус</h2>
-        <div class="status-now">
-          Сейчас: <b>{{ STATUS_LABELS[item.status] }}</b>
-        </div>
-        <button
-          v-if="rollbackTarget"
-          class="rollback tap"
-          :disabled="busy"
-          @click="changeStatus(rollbackTarget)"
-        >
-          ↩ Откатить в «{{ STATUS_LABELS[rollbackTarget] }}»
-        </button>
-        <div v-if="transitions.length" class="chips">
+        <div class="card">
+          <div class="status-now">
+            <span class="cap">Сейчас</span>
+            <b class="status-name">{{ STATUS_LABELS[item.status] }}</b>
+          </div>
+          <div v-if="transitions.length" class="chips">
+            <button
+              v-for="t in transitions"
+              :key="t"
+              class="chip tap"
+              :disabled="busy"
+              @click="changeStatus(t)"
+            >
+              <span>{{ STATUS_LABELS[t] }}</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path fill="none" d="M5 12h13m-5-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <p v-else class="empty-note">Дальнейших переходов нет.</p>
           <button
-            v-for="t in transitions"
-            :key="t"
-            class="chip tap"
+            v-if="rollbackTarget"
+            class="rollback tap"
             :disabled="busy"
-            @click="changeStatus(t)"
+            @click="changeStatus(rollbackTarget)"
           >
-            {{ STATUS_LABELS[t] }}
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="none" d="M19 12H6m5-6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Откатить в «{{ STATUS_LABELS[rollbackTarget] }}»</span>
           </button>
         </div>
-        <p v-else class="hint small">Дальнейших переходов нет.</p>
       </section>
 
       <!-- Основное -->
@@ -350,7 +359,7 @@ const photoIndexes = computed(() =>
         <div class="lbl-row">
           <label class="lbl">Название</label>
           <button class="regen-btn" :disabled="!form.title.trim()" @click="copyTitle">
-            📋 Копировать
+            Копировать
           </button>
         </div>
         <input v-model="form.title" class="field" :disabled="!canEdit" />
@@ -380,19 +389,19 @@ const photoIndexes = computed(() =>
         <div class="grid3">
           <div>
             <label class="lbl">Длина</label>
-            <input v-model="form.length_cm" class="field num" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
+            <input v-model="form.length_cm" class="field num big" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
           </div>
           <div>
             <label class="lbl">Ширина</label>
-            <input v-model="form.width_cm" class="field num" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
+            <input v-model="form.width_cm" class="field num big" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
           </div>
           <div>
             <label class="lbl">Рукав</label>
-            <input v-model="form.sleeve_cm" class="field num" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
+            <input v-model="form.sleeve_cm" class="field num big" inputmode="decimal" placeholder="—" :disabled="!canEdit" />
           </div>
         </div>
         <button class="copy-btn tap" :disabled="!canCopy" @click="copyCard">
-          📋 Скопировать описание + замеры
+          Скопировать описание и замеры
         </button>
       </section>
 
@@ -400,25 +409,25 @@ const photoIndexes = computed(() =>
       <section v-if="canFinance" class="block">
         <h2 class="block-title">Закупка</h2>
         <label class="lbl">Валюта закупки</label>
-        <select v-model="form.cost_currency" class="field">
+        <select v-model="form.cost_currency" class="field select">
           <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
         </select>
         <div class="grid2">
           <div>
             <label class="lbl">Себестоимость</label>
-            <input v-model="form.cost_price" class="field num" inputmode="decimal" />
+            <input v-model="form.cost_price" class="field num big" inputmode="decimal" />
           </div>
           <div>
             <label class="lbl">Реставрация</label>
-            <input v-model="form.restore_cost" class="field num" inputmode="decimal" />
+            <input v-model="form.restore_cost" class="field num big" inputmode="decimal" />
           </div>
           <div>
             <label class="lbl">Доставка</label>
-            <input v-model="form.delivery_cost" class="field num" inputmode="decimal" />
+            <input v-model="form.delivery_cost" class="field num big" inputmode="decimal" />
           </div>
           <div>
             <label class="lbl">Комиссия</label>
-            <input v-model="form.platform_fee" class="field num" inputmode="decimal" />
+            <input v-model="form.platform_fee" class="field num big" inputmode="decimal" />
           </div>
         </div>
       </section>
@@ -427,26 +436,26 @@ const photoIndexes = computed(() =>
       <section v-if="canFinance" class="block">
         <h2 class="block-title">Цена продажи</h2>
         <label class="lbl">Валюта цены</label>
-        <select v-model="form.price_currency" class="field">
+        <select v-model="form.price_currency" class="field select">
           <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
         </select>
         <div class="grid2">
           <div>
-            <label class="lbl">Цена (в объявлении)</label>
-            <input v-model="form.list_price" class="field num" inputmode="decimal" />
+            <label class="lbl">Цена в объявлении</label>
+            <input v-model="form.list_price" class="field num big" inputmode="decimal" />
           </div>
           <div>
             <label class="lbl">Фактическая продажа</label>
-            <input v-model="form.selling_price" class="field num" inputmode="decimal" />
+            <input v-model="form.selling_price" class="field num big" inputmode="decimal" />
           </div>
         </div>
         <div v-if="item.net_profit != null" class="profit-row">
-          Прибыль:
-          <b :class="item.net_profit >= 0 ? 'positive' : 'negative'">
+          <span class="cap">Прибыль</span>
+          <b class="profit-value num" :class="item.net_profit >= 0 ? 'positive' : 'negative'">
             {{ Math.round(item.net_profit) }} {{ baseSymbol() }}
           </b>
-          <span v-if="item.roi_percent != null" class="hint"> · ROI {{ Math.round(item.roi_percent) }}%</span>
-          <span class="hint"> (в {{ session.baseCurrency }})</span>
+          <span v-if="item.roi_percent != null" class="profit-note num">ROI {{ Math.round(item.roi_percent) }}%</span>
+          <span class="profit-note">в {{ session.baseCurrency }}</span>
         </div>
       </section>
 
@@ -478,225 +487,361 @@ const photoIndexes = computed(() =>
 </template>
 
 <style scoped>
+/*
+ * Дизайн-система: тёмный холст --ink-0, на нём «плавают» поля и карточки
+ * --ink-1 со скруглением --r-field/--r-card. Разделители-линии убраны —
+ * группировка держится на заголовках 17px и воздухе. Ни теней, ни градиентов.
+ */
 .detail {
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: var(--tg-theme-bg-color);
+  background: var(--ink-0);
+  color: var(--fg-0);
   display: flex;
   flex-direction: column;
 }
+
+/* ------------------------------- Шапка ------------------------------- */
 .head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: calc(var(--safe-top) + 10px) 12px 10px;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  padding: calc(var(--safe-top) + 10px) var(--pad) 10px;
+  background: var(--ink-0);
+}
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-0);
+}
+.close:active {
+  background: var(--ink-3);
 }
 .head-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
+/* Артикул — служебное число: мелко, приглушённо, но табличными цифрами. */
 .sku {
-  font-size: 16px;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-2);
+  font-size: 12.5px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
+
 .scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px;
+  padding: 4px var(--pad) 0;
 }
+
+/* ------------------------------- Фото ------------------------------- */
+/* Вещь продаёт фотография: даём ей высоту почти в треть экрана. */
 .photos {
   display: flex;
-  gap: 8px;
+  gap: var(--gap);
   overflow-x: auto;
-  padding: 8px 0;
+  padding: 8px 0 4px;
+  scroll-snap-type: x mandatory;
 }
 .photo {
   flex: none;
-  width: 120px;
-  height: 120px;
+  width: 152px;
+  height: 196px;
+  scroll-snap-align: start;
 }
+.photo :deep(.auth-image) {
+  border-radius: 14px;
+  background: var(--ink-1);
+}
+
+/* ------------------------------ Секции ------------------------------ */
 .block {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  padding: 16px 0 4px;
 }
 .block-title {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--tg-theme-hint-color);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--fg-0);
   margin: 0 0 10px;
 }
+.card {
+  background: var(--ink-1);
+  border-radius: var(--r-card);
+  padding: 14px;
+}
+
+/* --------------------------- Статус и шаги --------------------------- */
 .status-now {
-  font-size: 14px;
-  margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cap {
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+.status-name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--gap);
 }
+/* Главное действие экрана — перевести вещь на следующий этап. */
 .chip {
-  padding: 8px 14px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-link-color);
-  font-weight: 600;
-  font-size: 14px;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 50px;
+  padding: 0 20px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.chip:active {
+  background: color-mix(in srgb, var(--brand) 82%, #000);
 }
 .chip:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
+/* Откат — вспомогательный жест, поэтому мелкая пилюля-призрак. */
 .rollback {
-  display: block;
-  width: 100%;
-  margin-bottom: 10px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  border: 1px dashed var(--tg-theme-hint-color);
-  background: transparent;
-  color: var(--tg-theme-text-color);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  /* Перебиваем утилиту .tap (min-height 44px): откат — мелкая пилюля. */
+  min-height: 30px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-1);
   font-weight: 600;
-  font-size: 14px;
-  text-align: left;
+  font-size: 12.5px;
+}
+.rollback:active {
+  background: var(--ink-3);
 }
 .rollback:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
-.regen-btn:disabled {
-  opacity: 0.5;
+.empty-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-2);
 }
-.copy-btn {
-  width: 100%;
-  min-height: var(--tap);
-  margin-top: 12px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-link-color);
-  font-weight: 700;
-  font-size: 14px;
-}
-.copy-btn:disabled {
-  opacity: 0.5;
-}
-@keyframes gen-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-.small {
-  font-size: 12px;
+
+/* --------------------------- Поля и подписи --------------------------- */
+.lbl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .lbl {
   display: block;
-  font-size: 13px;
-  color: var(--tg-theme-hint-color);
-  margin: 10px 0 4px;
+  font-size: 12.5px;
+  color: var(--fg-2);
+  margin: 12px 0 6px;
+}
+.lbl-row .lbl {
+  margin-bottom: 6px;
+}
+.regen-btn {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-1);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.regen-btn:active {
+  background: var(--ink-3);
+}
+.regen-btn:disabled {
+  opacity: 0.45;
 }
 .field {
   width: 100%;
-  min-height: var(--tap);
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--tg-theme-secondary-bg-color);
-  background: var(--tg-theme-secondary-bg-color);
+  height: 50px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-field);
+  background-color: var(--ink-1);
+  color: var(--fg-0);
+  font-size: 16px;
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.field::placeholder {
+  color: var(--fg-2);
 }
 .field:disabled {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 .field:focus {
-  border-color: var(--tg-theme-link-color);
+  background-color: var(--ink-2);
+}
+/* Свой шеврон вместо системного: appearance: none его убирает. */
+.select {
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23767D89' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 18px 18px;
+}
+/* Числа в полях — тот же вес, что и суммы в списке вещей. */
+.big {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 .area {
+  height: auto;
+  min-height: 108px;
+  padding: 14px;
+  line-height: 1.45;
   resize: vertical;
-  min-height: 72px;
 }
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 0 var(--gap);
 }
 .grid3 {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
+  gap: 0 var(--gap);
 }
-.profit-row {
-  margin-top: 12px;
+.copy-btn {
+  width: 100%;
+  height: 50px;
+  margin-top: 16px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-0);
+  font-weight: 700;
   font-size: 15px;
 }
+.copy-btn:active {
+  background: var(--ink-3);
+}
+.copy-btn:disabled {
+  opacity: 0.45;
+}
+
+/* ------------------------------ Прибыль ------------------------------ */
+.profit-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--ink-1);
+  border-radius: var(--r-card);
+}
+.profit-value {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.profit-note {
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+
+/* ------------------------------ Действия ------------------------------ */
 .danger-block {
-  border-bottom: none;
+  padding-top: 20px;
 }
 .actions {
   display: flex;
-  gap: 10px;
+  gap: var(--gap);
 }
 .act {
   flex: 1;
-  min-height: var(--tap);
-  border-radius: var(--radius);
+  height: 50px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 .act:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 .archive {
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
+  background: var(--ink-2);
+  color: var(--fg-0);
+}
+.archive:active {
+  background: var(--ink-3);
 }
 .restore {
-  background: var(--accent-positive);
-  color: #fff;
+  background: color-mix(in srgb, var(--s-ship) 15%, transparent);
+  color: var(--s-ship);
 }
 .delete {
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-destructive-text-color, #e53935);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
 }
 .delete.armed {
-  background: var(--tg-theme-destructive-text-color, #e53935);
-  color: #fff;
+  background: var(--danger);
+  color: var(--brand-ink);
 }
 .scroll-pad {
-  height: 12px;
+  height: 20px;
 }
+
+/* --------------------------- Липкое сохранение --------------------------- */
 .sticky-save {
-  padding: 10px 16px calc(var(--safe-bottom) + 10px);
-  border-top: 1px solid var(--tg-theme-secondary-bg-color);
-  background: var(--tg-theme-bg-color);
+  padding: 10px var(--pad) calc(var(--safe-bottom) + 12px);
+  background: var(--ink-0);
 }
 .save {
   width: 100%;
-  min-height: var(--tap);
-  border-radius: var(--radius);
-  background: var(--tg-theme-button-color);
-  color: var(--tg-theme-button-text-color);
+  height: 50px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--brand-ink);
   font-size: 16px;
   font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.save:active {
+  background: color-mix(in srgb, var(--brand) 82%, #000);
 }
 .save:disabled {
-  opacity: 0.5;
-}
-.wide {
-  width: 100%;
-  min-height: var(--tap);
-  margin-top: 10px;
-  border-radius: var(--radius);
-  background: var(--tg-theme-secondary-bg-color);
-  color: var(--tg-theme-text-color);
-  font-size: 15px;
-  font-weight: 700;
-}
-.wide:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 </style>

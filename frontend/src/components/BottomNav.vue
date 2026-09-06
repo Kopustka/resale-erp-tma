@@ -41,21 +41,27 @@ function onTab(tab: Tab): void {
       @click="onTab(t.key)"
     >
       <span class="nav-icon">
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="23"
+          height="23"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.9"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <template v-if="t.icon === 'inventory'">
-            <path
-              fill="currentColor"
-              d="M3 4h18v4H3V4zm1 6h16v10H4V10zm4 3v2h8v-2H8z"
-            />
+            <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" />
+            <path d="m4 8.5 8 4.5 8-4.5M12 13v7" />
           </template>
           <template v-else-if="t.icon === 'bi'">
-            <path fill="currentColor" d="M4 13h4v7H4v-7zm6-8h4v15h-4V5zm6 4h4v11h-4V9z" />
+            <path d="M5 19V11M12 19V5M19 19v-6" />
           </template>
           <template v-else>
-            <path
-              fill="currentColor"
-              d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4a7.9 7.9 0 0 0-.15-1.5l2-1.55-2-3.46-2.35.94a8 8 0 0 0-2.6-1.5L15.5 2h-7l-.4 2.43a8 8 0 0 0-2.6 1.5L3.15 5 1.15 8.46l2 1.55A8 8 0 0 0 3 12a8 8 0 0 0 .15 1.5l-2 1.55 2 3.46 2.35-.94a8 8 0 0 0 2.6 1.5L8.5 22h7l.4-2.43a8 8 0 0 0 2.6-1.5l2.35.94 2-3.46-2-1.55c.1-.49.15-1 .15-1.5z"
-            />
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6" />
           </template>
         </svg>
       </span>
@@ -65,6 +71,8 @@ function onTab(tab: Tab): void {
 </template>
 
 <style scoped>
+/* Разделительной линии нет: список уходит под панель, и вместо шва — мягкое
+   растворение фона. Так нижний край не режет карточки пополам. */
 .bottom-nav {
   position: fixed;
   left: 0;
@@ -73,9 +81,8 @@ function onTab(tab: Tab): void {
   z-index: 50;
   display: flex;
   height: calc(var(--nav-height) + var(--safe-bottom));
-  padding-bottom: var(--safe-bottom);
-  background: var(--tg-theme-bg-color);
-  border-top: 1px solid var(--tg-theme-secondary-bg-color);
+  padding: 8px 12px var(--safe-bottom);
+  background: linear-gradient(180deg, transparent, var(--ink-0) 34%);
 }
 .nav-btn {
   flex: 1;
@@ -83,18 +90,19 @@ function onTab(tab: Tab): void {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  color: var(--tg-theme-hint-color);
+  gap: 4px;
+  color: var(--fg-2);
   transition: color 0.15s ease;
 }
 .nav-btn.active {
-  color: var(--tg-theme-link-color);
+  color: var(--brand);
 }
 .nav-icon {
   display: flex;
 }
 .nav-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.005em;
 }
 </style>
