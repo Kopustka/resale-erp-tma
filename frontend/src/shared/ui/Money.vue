@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatMoney, formatMoneySigned } from '@/shared/utils/format'
+import { fromBase } from '@/shared/utils/currency'
 import type { Currency } from '@/shared/api/types'
 
 const props = withDefaults(
   defineProps<{
     value: number | null | undefined
-    /** Валюта суммы; не указана — базовая валюта склада. */
+    /**
+     * Валюта суммы. Не указана — сумма в базовой валюте склада, и её
+     * переводим в валюту отображения. Указана — показываем как есть: это
+     * цифра, которую человек сам ввёл, и переводить её было бы враньём.
+     */
     currency?: Currency | null
     /** Показывать знак «+/-» (для прибыли). */
     signed?: boolean
@@ -17,10 +22,15 @@ const props = withDefaults(
   { signed: false, colored: false, strong: false, currency: null },
 )
 
+const shown = computed(() => {
+  if (props.value === null || props.value === undefined) return props.value
+  return props.currency ? props.value : fromBase(props.value)
+})
+
 const text = computed(() =>
   props.signed
-    ? formatMoneySigned(props.value, props.currency)
-    : formatMoney(props.value, props.currency),
+    ? formatMoneySigned(shown.value, props.currency)
+    : formatMoney(shown.value, props.currency),
 )
 
 const colorClass = computed(() => {

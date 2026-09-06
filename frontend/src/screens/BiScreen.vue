@@ -54,8 +54,17 @@ function barWidth(avgDays: number): string {
   <div class="bi">
     <header class="head">
       <h1 class="title">Аналитика</h1>
-      <button class="refresh" :disabled="analytics.loading" @click="analytics.fetch()">
-        Обновить
+      <button
+        class="icon-btn"
+        :class="{ busy: analytics.loading }"
+        :disabled="analytics.loading"
+        aria-label="Обновить"
+        @click="analytics.fetch()"
+      >
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 11a8 8 0 1 0-.9 4.6M20 5v6h-6" />
+        </svg>
       </button>
     </header>
 
@@ -66,44 +75,43 @@ function barWidth(avgDays: number): string {
     </div>
 
     <div v-else-if="summary" class="content no-scrollbar">
-      <!-- KPI -->
-      <div class="kpi-row">
-        <div class="kpi">
-          <span class="kpi-label">Прибыль</span>
+      <!-- Главная цифра: ради неё открывают экран -->
+      <section class="hero">
+        <p class="hero-label">Заработано всего</p>
+        <p class="hero-value">
           <Money :value="summary.total_profit" :colored="true" strong />
-        </div>
-        <div class="kpi">
-          <span class="kpi-label">В обороте</span>
-          <span class="num-strong kpi-big">{{ summary.active_count }}</span>
-        </div>
-      </div>
+        </p>
+      </section>
 
-      <!-- Зависшие -->
-      <button
-        class="stale"
-        :class="{ empty: summary.stale.count === 0 }"
-        :disabled="summary.stale.count === 0"
-        @click="drillStale"
-      >
-        <div class="stale-left">
-          <div class="stale-title">Зависшие товары</div>
-          <div class="stale-sub hint">На складе &gt; {{ summary.stale.threshold_days }} дней</div>
+      <!-- Две плитки: что в работе и что застряло -->
+      <div class="tiles">
+        <div class="tile">
+          <span class="tile-label">В работе</span>
+          <span class="tile-value">{{ summary.active_count }}</span>
         </div>
-        <div class="stale-right">
-          <span class="num-strong stale-count">{{ summary.stale.count }}</span>
-          <span class="hint">шт.</span>
-          <svg v-if="summary.stale.count > 0" viewBox="0 0 24 24" width="18" height="18" class="chev">
-            <path fill="currentColor" d="m9 6 6 6-6 6" />
+        <button
+          class="tile tile-act"
+          :class="{ empty: summary.stale.count === 0 }"
+          :disabled="summary.stale.count === 0"
+          @click="drillStale"
+        >
+          <span class="tile-label">Зависшие</span>
+          <span class="tile-value stale-value">{{ summary.stale.count }}</span>
+          <span class="tile-note">дольше {{ summary.stale.threshold_days }} дней</span>
+          <svg v-if="summary.stale.count > 0" class="chev" viewBox="0 0 24 24" width="16" height="16"
+               fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
           </svg>
-        </div>
-      </button>
+        </button>
+      </div>
 
       <!-- Эффективность каналов -->
       <section v-if="summary.by_channel.length" class="card">
         <h2 class="card-title">Каналы</h2>
         <div class="table">
           <div class="tr th">
-            <span class="c-ch">Канал</span>
+            <span>Канал</span>
             <span class="c-n">Выложено</span>
             <span class="c-n">Продано</span>
             <span class="c-n">Прибыль</span>
@@ -111,18 +119,18 @@ function barWidth(avgDays: number): string {
           <div v-for="ch in summary.by_channel" :key="ch.channel_id" class="tr" :class="{ off: !ch.enabled }">
             <span class="c-ch">
               <span class="ch-name">{{ ch.title || ch.chat_id }}</span>
-              <span v-if="ch.sell_through !== null" class="hint small">
+              <span v-if="ch.sell_through !== null" class="c-meta">
                 конверсия {{ Math.round(ch.sell_through) }}%<template v-if="ch.avg_days !== null">
                   · {{ Math.round(ch.avg_days) }} дн.</template><template v-if="ch.reactions">
-                  · {{ ch.reactions }} ❤</template>
+                  · {{ ch.reactions }} реакц.</template>
               </span>
             </span>
-            <span class="c-n">{{ ch.posted }}</span>
-            <span class="c-n">{{ ch.sold }}</span>
+            <span class="c-n num">{{ ch.posted }}</span>
+            <span class="c-n num">{{ ch.sold }}</span>
             <span class="c-n"><Money :value="ch.profit" signed /></span>
           </div>
         </div>
-        <p class="hint small note">
+        <p class="note">
           Вещь может висеть в нескольких каналах сразу, и определить, который
           привёл покупателя, по данным нельзя. Продажа засчитывается каждому —
           поэтому сумма по каналам может превышать общую прибыль. Это сравнение
@@ -133,9 +141,9 @@ function barWidth(avgDays: number): string {
       <!-- Окупаемость по точкам -->
       <section class="card">
         <h2 class="card-title">Окупаемость по точкам закупки</h2>
-        <div v-if="summary.by_location.length" class="table">
+        <div v-if="summary.by_location.length" class="table loc">
           <div class="tr th">
-            <span class="c-loc">Точка</span>
+            <span>Точка</span>
             <span class="c-num">Вложено</span>
             <span class="c-num">Прибыль</span>
             <span class="c-num">ROI</span>
@@ -149,28 +157,27 @@ function barWidth(avgDays: number): string {
             <span class="c-num num-strong">{{ formatPercent(row.roi_percent) }}</span>
           </div>
         </div>
-        <p v-else class="empty-note hint">Пока нет данных по точкам.</p>
+        <p v-else class="empty-note">Пока нет данных по точкам.</p>
       </section>
 
       <!-- Оборачиваемость -->
       <section class="card">
-        <h2 class="card-title">Оборачиваемость (ср. дни до продажи)</h2>
+        <h2 class="card-title">Оборачиваемость</h2>
+        <p class="card-sub">Средний срок от закупки до продажи</p>
         <div v-if="summary.turnover.length" class="bars">
           <div v-for="(p, i) in summary.turnover" :key="i" class="bar-row">
             <div class="bar-head">
               <span class="bar-label">{{ p.category }}</span>
-              <span class="bar-meta hint">{{ p.period }} · {{ p.sold_count }} шт.</span>
+              <span class="bar-value num">{{ formatDays(p.avg_days) }}</span>
             </div>
             <div class="bar-track">
               <div class="bar-fill" :style="{ width: barWidth(p.avg_days) }" />
-              <span class="bar-value num">{{ formatDays(p.avg_days) }}</span>
             </div>
+            <span class="bar-meta">{{ p.period }} · {{ p.sold_count }} шт.</span>
           </div>
         </div>
-        <p v-else class="empty-note hint">Пока нет продаж для оборачиваемости.</p>
+        <p v-else class="empty-note">Пока нет продаж для оборачиваемости.</p>
       </section>
-
-      <div class="bottom-pad" />
     </div>
   </div>
 </template>
@@ -181,23 +188,33 @@ function barWidth(avgDays: number): string {
   flex-direction: column;
   height: 100%;
 }
+/* Шапка без разделителя: плоскости различаются фоном, линии не нужны. */
 .head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 12px) 16px 10px;
-  border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
+  gap: 10px;
+  padding: calc(var(--safe-top) + 10px) var(--pad) 6px;
 }
 .title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
-.refresh {
-  color: var(--tg-theme-link-color);
-  font-weight: 600;
-  font-size: 14px;
-  padding: 8px;
+.icon-btn {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  color: var(--fg-1);
+  display: grid;
+  place-items: center;
+}
+.icon-btn.busy {
+  opacity: 0.5;
 }
 .state {
   flex: 1;
@@ -206,185 +223,234 @@ function barWidth(avgDays: number): string {
   align-items: center;
   justify-content: center;
   gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
 }
 .retry {
-  color: var(--tg-theme-link-color);
+  color: var(--brand);
   font-weight: 700;
 }
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 16px calc(var(--nav-height) + var(--safe-bottom));
+  /* Поля те же, что в списке вещей: экраны стоят на одной вертикали. */
+  padding: 4px var(--pad) calc(var(--nav-height) + var(--safe-bottom) + 12px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
-.kpi-row {
+
+/* --------------------------- Главная цифра --------------------------- */
+.hero {
+  padding: 6px 0 4px;
+}
+.hero-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--fg-1);
+}
+.hero-value {
+  margin: 0;
+  font-size: 40px;
+  line-height: 42px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------- Плитки --------------------------- */
+.tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
-.kpi {
-  background: var(--tg-theme-secondary-bg-color);
-  border-radius: var(--radius);
-  padding: 14px;
+.tile {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.kpi-label {
-  font-size: 12px;
-  color: var(--tg-theme-hint-color);
-}
-.kpi :deep(.num-strong),
-.kpi-big {
-  font-size: 22px;
-}
-.stale {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  text-align: left;
+  min-width: 0;
   padding: 14px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent-negative) 12%, var(--tg-theme-secondary-bg-color));
+  border-radius: var(--r-card);
+  background: var(--ink-1);
+  text-align: left;
+  color: var(--fg-0);
 }
-.stale.empty {
-  background: var(--tg-theme-secondary-bg-color);
-  opacity: 0.8;
+.tile-label {
+  font-size: 13px;
+  color: var(--fg-1);
 }
-.stale-title {
-  font-size: 15px;
+.tile-value {
+  margin-top: 4px;
+  font-size: 28px;
+  line-height: 32px;
   font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
-.stale-sub {
-  font-size: 12px;
-  margin-top: 2px;
+.tile-note {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--fg-2);
 }
-.stale-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* Зависшие — янтарь этапа подготовки: тот же сигнал, что в списке вещей. */
+.stale-value {
+  color: var(--s-prep);
 }
-.stale-count {
-  font-size: 24px;
-  color: var(--accent-negative);
+.tile.empty .stale-value {
+  color: var(--fg-0);
 }
-.stale.empty .stale-count {
-  color: var(--tg-theme-text-color);
+.tile-act:active:not(:disabled) {
+  background: var(--ink-2);
 }
 .chev {
-  color: var(--tg-theme-hint-color);
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  color: var(--fg-2);
 }
+
+/* --------------------------- Карточки-секции --------------------------- */
 .card {
-  background: var(--tg-theme-secondary-bg-color);
-  border-radius: var(--radius);
-  padding: 14px;
+  padding: var(--pad);
+  border-radius: var(--r-card);
+  background: var(--ink-1);
 }
 .card-title {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 700;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
+.card-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--fg-1);
+}
+.card-title + .table,
+.card-title + .bars,
+.card-sub + .bars,
+.card-title + .empty-note,
+.card-sub + .empty-note {
+  margin-top: 14px;
+}
+
+/* --------------------------- Таблицы --------------------------- */
 .table {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 .tr {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 0.7fr;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--tg-theme-bg-color);
-  font-size: 13px;
+  grid-template-columns: minmax(0, 1fr) 58px 52px 78px;
+  gap: 6px;
   align-items: center;
+  padding: 9px 0;
+  font-size: 14px;
+  border-bottom: 1px solid var(--ink-2);
 }
+.table.loc .tr {
+  grid-template-columns: minmax(0, 1fr) 76px 76px 46px;
+}
+.tr:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+/* Шапка таблицы — подпись, а не «эйебрау»: обычный регистр, без разрядки. */
 .tr.th {
-  font-size: 11px;
-  color: var(--tg-theme-hint-color);
-  text-transform: uppercase;
-}
-.c-loc {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding-top: 0;
+  font-size: 12.5px;
+  color: var(--fg-2);
   white-space: nowrap;
 }
-.c-num {
-  text-align: right;
-}
-.bars {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.bar-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 5px;
-}
-.bar-label {
-  font-size: 13px;
-  font-weight: 600;
-}
-.bar-meta {
-  font-size: 11px;
-}
-.bar-track {
-  position: relative;
-  height: 22px;
-  background: var(--tg-theme-bg-color);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--tg-theme-link-color);
-  min-width: 4px;
-}
-.bar-value {
-  position: absolute;
-  right: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.empty-note {
-  font-size: 13px;
-  margin: 0;
-}
-.bottom-pad {
-  height: 8px;
+.tr.off {
+  opacity: 0.5;
 }
 .c-ch {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 .ch-name {
-  font-weight: 700;
-  word-break: break-all;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
-.c-n {
-  width: 72px;
+.c-meta {
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--fg-2);
+}
+.c-n,
+.c-num {
   text-align: right;
-  flex: none;
+  font-variant-numeric: tabular-nums;
 }
-.tr.off {
-  opacity: 0.5;
-}
-.small {
-  font-size: 11px;
+.c-loc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .note {
-  margin-top: 10px;
-  line-height: 1.4;
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-2);
+}
+.empty-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-1);
+}
+
+/* --------------------------- Полосы оборачиваемости --------------------------- */
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.bar-label {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-value {
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* Полоса тонкая: она сравнивает величины, а не изображает объём. */
+.bar-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--s-listed);
+}
+.bar-meta {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--fg-2);
 }
 </style>

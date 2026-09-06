@@ -6,13 +6,16 @@ import ItemCard from '@/components/ItemCard.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
 import SellPriceSheet from '@/components/SellPriceSheet.vue'
 import Money from '@/shared/ui/Money.vue'
+import BottomSheet from '@/shared/ui/BottomSheet.vue'
+import { CURRENCIES, CURRENCY_SYMBOLS } from '@/shared/api/types'
+import { fx, isConverted, setDisplay } from '@/shared/utils/currency'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useToastStore } from '@/stores/toast'
 import type { Currency, ItemOut, ItemStatus } from '@/shared/api/types'
 import { nextStatus, requiresListPrice, requiresSellingPrice } from '@/shared/utils/status'
-import { hapticImpact, hapticNotify } from '@/shared/telegram/webapp'
+import { hapticImpact, hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
 import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
 const items = useItemsStore()
@@ -31,6 +34,17 @@ const heroValue = computed(() => analytics.summary?.total_profit ?? null)
 const activeCount = computed(() => analytics.summary?.active_count ?? null)
 const staleCount = computed(() => analytics.summary?.stale.count ?? 0)
 const staleDays = computed(() => analytics.summary?.stale.threshold_days ?? 60)
+
+/**
+ * Валюта показа. Ничего не меняет в данных — только переводит уже
+ * посчитанные суммы, поэтому переключение мгновенное и без запросов.
+ */
+const curOpen = ref(false)
+function pickCurrency(c: Currency): void {
+  hapticSelection()
+  setDisplay(c)
+  curOpen.value = false
+}
 
 /** Тап по «залежалось» — тот же drill-down, что из аналитики. */
 function showStale(): void {
@@ -185,6 +199,15 @@ onBeforeUnmount(() => {
           {{ session.currentStore?.name ?? 'Склад' }}
         </span>
         <button
+          v-if="session.canSeeFinance"
+          class="cur-btn"
+          :class="{ on: isConverted() }"
+          :aria-label="`Валюта показа: ${fx.display}`"
+          @click="curOpen = true"
+        >
+          {{ CURRENCY_SYMBOLS[fx.display] }}
+        </button>
+        <button
           class="icon-btn"
           :class="{ on: items.viewArchived }"
           :aria-label="items.viewArchived ? 'Показать активные' : 'Показать архив'"
@@ -205,6 +228,7 @@ onBeforeUnmount(() => {
       </p>
       <p v-if="session.canSeeFinance" class="hero-sub">
         <span v-if="activeCount !== null">В работе <b>{{ activeCount }}</b></span>
+        <span v-if="isConverted()" class="conv">по курсу к {{ fx.base }}</span>
       </p>
 
       <div class="find">
@@ -301,6 +325,40 @@ onBeforeUnmount(() => {
       @apply="applyFilters"
       @reset="resetFilters"
     />
+    <BottomSheet v-model="curOpen" title="Валюта показа">
+      <p class="cur-note">
+        Меняется только вид: суммы склада остаются в {{ fx.base }}, здесь их
+        переводят по курсу Нацбанка.
+      </p>
+      <div class="cur-list">
+        <button
+          v-for="c in CURRENCIES"
+          :key="c"
+          class="cur-row"
+          :class="{ sel: c === fx.display }"
+          @click="pickCurrency(c)"
+        >
+          <span class="cur-sym">{{ CURRENCY_SYMBOLS[c] }}</span>
+          <span class="cur-code">{{ c }}</span>
+          <span v-if="c === fx.base" class="cur-base">базовая</span>
+          <svg
+            v-if="c === fx.display"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m5 13 4 4L19 7" />
+          </svg>
+        </button>
+      </div>
+    </BottomSheet>
+
     <SellPriceSheet v-model="priceOpen" :item="priceItem" @confirm="onConfirmPrice" />
   </div>
 </template>
@@ -402,6 +460,67 @@ onBeforeUnmount(() => {
 .hero-sub b {
   color: var(--fg-0);
   font-weight: 650;
+}
+.conv {
+  margin-left: 12px;
+  color: var(--fg-2);
+}
+.cur-btn {
+  flex: none;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+  color: var(--fg-1);
+  font-size: 15px;
+  font-weight: 700;
+}
+.cur-btn.on {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+}
+.cur-note {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--fg-1);
+}
+.cur-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cur-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 54px;
+  padding: 0 14px;
+  border-radius: var(--r-field);
+  background: var(--ink-1);
+  color: var(--fg-0);
+  text-align: left;
+}
+.cur-row.sel {
+  background: var(--ink-3);
+  color: var(--brand);
+}
+.cur-sym {
+  width: 26px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.cur-code {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--fg-0);
+}
+.cur-base {
+  font-size: 12px;
+  color: var(--fg-2);
 }
 .find {
   display: flex;

@@ -3,6 +3,7 @@ import { storesApi } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/http'
 import type { Currency, InviteOut, MemberOut, Role, StoreOut } from '@/shared/api/types'
 import { setBaseCurrency } from '@/shared/utils/format'
+import { setBase, setRates } from '@/shared/utils/currency'
 
 const LS_STORE_KEY = 'resale.currentStoreId'
 
@@ -88,6 +89,20 @@ export const useSessionStore = defineStore('session', {
       this.currentStoreId = res.current_store_id
       localStorage.setItem(LS_STORE_KEY, res.current_store_id)
       setBaseCurrency(this.baseCurrency)
+      setBase(this.baseCurrency)
+      // Курсы нужны, только если валюта показа отличается от базовой, но
+      // тянем сразу: переключение обязано быть мгновенным, без ожидания сети.
+      void this.loadRates()
+    },
+
+    /** Курсы к базовой валюте склада. Молча: без них суммы просто не переводятся. */
+    async loadRates(): Promise<void> {
+      try {
+        const r = await storesApi.fx()
+        setRates(r.rates)
+      } catch {
+        /* нет курсов — показываем в базовой валюте */
+      }
     },
 
     /** Обновить базовую валюту после смены в настройках. */
@@ -95,6 +110,8 @@ export const useSessionStore = defineStore('session', {
       const s = this.stores.find((x) => x.id === this.currentStoreId)
       if (s) s.base_currency = cur
       setBaseCurrency(cur)
+      setBase(cur)
+      void this.loadRates()
     },
 
     async fetchMembers(): Promise<void> {
