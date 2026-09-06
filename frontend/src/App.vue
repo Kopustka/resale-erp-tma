@@ -17,6 +17,7 @@ import SettingsScreen from '@/screens/SettingsScreen.vue'
 const CreateScreen = defineAsyncComponent(() => import('@/screens/CreateScreen.vue'))
 const ItemDetail = defineAsyncComponent(() => import('@/screens/ItemDetail.vue'))
 const AdminScreen = defineAsyncComponent(() => import('@/screens/AdminScreen.vue'))
+const FieldsScreen = defineAsyncComponent(() => import('@/screens/FieldsScreen.vue'))
 
 
 const session = useSessionStore()
@@ -43,6 +44,7 @@ const OVERLAYS = {
   create: { comp: CreateScreen, motion: 'lift' },
   detail: { comp: ItemDetail, motion: 'push' },
   admin: { comp: AdminScreen, motion: 'push' },
+  fields: { comp: FieldsScreen, motion: 'push' },
 } as const
 
 const overlay = computed(() =>

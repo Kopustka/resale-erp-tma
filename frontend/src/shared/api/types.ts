@@ -76,6 +76,8 @@ export interface ItemCreate {
   purchase_location?: string
   sales_platform?: string
   ad_url?: string
+  /** Значения полей, заведённых магазином (см. FormField). */
+  extra?: Record<string, string>
 }
 
 /** Частичное обновление товара (редактирование). */
@@ -426,4 +428,41 @@ export interface OversightOut {
   store_name: string | null
   status: string
   created_at: string
+}
+
+// --------------------------- Настраиваемая форма --------------------------- //
+
+export type FieldKind = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'MONEY' | 'SELECT'
+
+export interface FormField {
+  id: string
+  key: string
+  label: string
+  kind: FieldKind
+  enabled: boolean
+  required: boolean
+  position: number
+  builtin: boolean
+  options: string[]
+  hint: string | null
+  /** Поле нельзя скрыть или сделать необязательным — решает сервер. */
+  locked: boolean
+}
+
+export interface FieldPatch {
+  id: string
+  label?: string
+  enabled?: boolean
+  required?: boolean
+  position?: number
+  hint?: string | null
+  options?: string[]
+}
+
+export interface FieldCreate {
+  label: string
+  kind: FieldKind
+  required?: boolean
+  hint?: string | null
+  options?: string[]
 }

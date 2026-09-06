@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AutocompleteInput from '@/components/AutocompleteInput.vue'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
@@ -7,13 +7,41 @@ import { useToastStore } from '@/stores/toast'
 import { closeOverlay, setTab } from '@/app/navigation'
 import { hapticNotify } from '@/shared/telegram/webapp'
 import type { ItemCreate } from '@/shared/api/types'
-import { mediaApi } from '@/shared/api/endpoints'
+import { fieldsApi, mediaApi } from '@/shared/api/endpoints'
+import type { FormField } from '@/shared/api/types'
 import { downscaleForUpload } from '@/shared/utils/image'
 import { CURRENCIES, type Currency } from '@/shared/api/types'
 
 const items = useItemsStore()
 const session = useSessionStore()
 const toast = useToastStore()
+
+/**
+ * Форма настраивается магазином: какие поля спрашивать, как их назвать и в
+ * каком порядке. Пока настройки не пришли, показываем всё — иначе на
+ * медленной сети экран мигал бы пустотой и человек решил бы, что сломалось.
+ */
+const formFields = ref<FormField[]>([])
+const extra = reactive<Record<string, string>>({})
+
+function fieldOf(key: string): FormField | undefined {
+  return formFields.value.find((f) => f.key === key)
+}
+/** Показывать ли встроенное поле. Настройки ещё не загружены — показываем. */
+function shown(key: string): boolean {
+  const f = fieldOf(key)
+  return f ? f.enabled : true
+}
+/** Подпись поля с учётом переименования и пометки обязательности. */
+function labelOf(key: string, fallback: string): string {
+  const f = fieldOf(key)
+  const text = f?.label ?? fallback
+  return f?.required ? `${text} *` : text
+}
+/** Свои поля магазина — рисуются общим списком после встроенных. */
+const customFields = computed(() =>
+  formFields.value.filter((f) => !f.builtin && f.enabled),
+)
 
 const form = reactive({
   title: '',
@@ -40,6 +68,14 @@ interface PhotoEntry {
   uploading: boolean
   error: boolean
 }
+
+onMounted(async () => {
+  try {
+    formFields.value = await fieldsApi.list()
+  } catch {
+    // Настройки не пришли — форма покажет полный набор, это рабочее состояние.
+  }
+})
 
 const photos = ref<PhotoEntry[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -150,6 +186,15 @@ async function submit(): Promise<void> {
   if (form.purchase_location.trim()) payload.purchase_location = form.purchase_location.trim()
   if (form.sales_platform.trim()) payload.sales_platform = form.sales_platform.trim()
   if (form.ad_url.trim()) payload.ad_url = form.ad_url.trim()
+  // Свои поля магазина: пустые не шлём, чтобы не забивать хранилище
+  // пустыми строками — сервер всё равно отбросит незаявленные ключи.
+  const filled: Record<string, string> = {}
+  for (const f of customFields.value) {
+    const v = (extra[f.key] ?? '').trim()
+    if (v) filled[f.key] = v
+  }
+  if (Object.keys(filled).length) payload.extra = filled
+
   const photoIds = photos.value
     .filter((p) => p.id !== null)
     .map((p) => p.id as string)
@@ -233,56 +278,92 @@ async function submit(): Promise<void> {
       <!-- Основное -->
       <section class="block">
         <h2 class="block-title">Основное</h2>
-        <label class="lbl">Название</label>
+        <template v-if="shown('title')">
+        <label class="lbl">{{ labelOf('title', 'Название') }}</label>
         <input
           v-model="form.title"
           class="field"
           :placeholder="photos.length ? 'Пусто — сгенерируется по фото ✨' : 'Напр. Куртка кожаная'"
         />
+        </template>
 
-        <label class="lbl">Бренд *</label>
+        <label class="lbl">{{ labelOf('brand', 'Бренд') }}</label>
         <AutocompleteInput v-model="form.brand" field="brand" placeholder="Напр. Prada" />
 
-        <label class="lbl">Категория *</label>
+        <label class="lbl">{{ labelOf('category', 'Категория') }}</label>
         <AutocompleteInput v-model="form.category" field="category" placeholder="Напр. Верхняя одежда" />
 
         <div class="grid2">
           <div>
-            <label class="lbl">Размер</label>
+            <label class="lbl">{{ labelOf('size', 'Размер') }}</label>
             <input v-model="form.size" class="field" placeholder="M / 48" />
           </div>
           <div>
-            <label class="lbl">Цвет</label>
+            <label class="lbl">{{ labelOf('color', 'Цвет') }}</label>
             <input v-model="form.color" class="field" placeholder="Чёрный" />
           </div>
         </div>
 
-        <label class="lbl">Состояние</label>
-        <input v-model="form.condition" class="field" placeholder="8/10" />
+        <template v-if="shown('condition')">
+          <label class="lbl">{{ labelOf('condition', 'Состояние') }}</label>
+          <input v-model="form.condition" class="field" placeholder="Идеальное / 8 из 10" />
+        </template>
 
-        <label class="lbl">Описание</label>
+        <template v-if="shown('description')">
+        <label class="lbl">{{ labelOf('description', 'Описание') }}</label>
         <textarea
           v-model="form.description"
           class="field area"
           rows="3"
           :placeholder="photos.length ? 'Пусто — сгенерируется по фото ✨' : 'Заметки о товаре'"
         />
+        </template>
       </section>
 
       <!-- Логистика -->
       <section class="block">
         <h2 class="block-title">Закупка и площадка</h2>
-        <label class="lbl">Место закупки</label>
-        <input v-model="form.purchase_location" class="field" placeholder="Рынок / поставщик" />
+        <template v-if="shown('purchase_location')">
+          <label class="lbl">{{ labelOf('purchase_location', 'Где куплено') }}</label>
+          <input v-model="form.purchase_location" class="field" placeholder="Рынок / поставщик" />
+        </template>
 
-        <label class="lbl">Площадка продажи</label>
-        <input v-model="form.sales_platform" class="field" placeholder="Avito / Telegram" />
+        <template v-if="shown('sales_platform')">
+          <label class="lbl">{{ labelOf('sales_platform', 'Площадка') }}</label>
+          <input v-model="form.sales_platform" class="field" placeholder="Avito / Telegram" />
+        </template>
 
         <label class="lbl">Ссылка на объявление</label>
         <input v-model="form.ad_url" class="field" inputmode="url" placeholder="https://…" />
       </section>
 
       <!-- Финансы (скрыто для EMPLOYEE) -->
+      <!-- Поля, которые магазин завёл сам -->
+      <section v-if="customFields.length" class="block">
+        <h2 class="block-title">Дополнительно</h2>
+        <template v-for="f in customFields" :key="f.id">
+          <label class="lbl">{{ f.label }}{{ f.required ? ' *' : '' }}</label>
+          <select v-if="f.kind === 'SELECT'" v-model="extra[f.key]" class="field">
+            <option value="">Не выбрано</option>
+            <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
+          </select>
+          <textarea
+            v-else-if="f.kind === 'TEXTAREA'"
+            v-model="extra[f.key]"
+            class="field area"
+            rows="3"
+          />
+          <input
+            v-else
+            v-model="extra[f.key]"
+            class="field"
+            :class="{ num: f.kind === 'NUMBER' || f.kind === 'MONEY' }"
+            :inputmode="f.kind === 'NUMBER' || f.kind === 'MONEY' ? 'decimal' : 'text'"
+          />
+          <p v-if="f.hint" class="hint field-hint">{{ f.hint }}</p>
+        </template>
+      </section>
+
       <section v-if="session.canSeeFinance" class="block">
         <h2 class="block-title">Закупка</h2>
         <label class="lbl">Валюта закупки</label>

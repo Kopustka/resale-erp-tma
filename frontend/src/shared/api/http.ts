@@ -133,6 +133,8 @@ export const http = {
     request<T>(path, { method: 'GET', query, signal }),
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, { method: 'POST', body, headers }),
+  put: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: 'PUT', body, headers }),
   patch: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, { method: 'PATCH', body, headers }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),

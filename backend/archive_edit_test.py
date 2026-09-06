@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import (
-    AuditLog, Item,
+    StoreField, AuditLog, Item,
     ItemStatusLog,
     Role,
     Store,
@@ -74,6 +74,7 @@ async def teardown():
         await s.flush()
         for st in stores:
             await s.execute(delete(AuditLog).where(AuditLog.store_id == st.id))
+            await s.execute(delete(StoreField).where(StoreField.store_id == st.id))
             await s.execute(delete(Store).where(Store.id == st.id))
         await s.execute(delete(User).where(User.id == u.id))
         await s.commit()

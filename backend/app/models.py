@@ -25,7 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -237,6 +237,11 @@ class Item(Base):
     description: Mapped[str | None] = mapped_column(Text)
     photo_file_ids: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, server_default="{}"
+    )
+    #: Значения полей, которые магазин завёл сам (см. StoreField). Колонок под
+    #: них нет намеренно: иначе добавление поля в форму требовало бы миграции.
+    extra: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default="{}", nullable=False
     )
 
     # Финансы. Основные колонки cost_price/…/selling_price хранят суммы В БАЗОВОЙ
@@ -758,3 +763,57 @@ class StoreOversight(Base):
     __table_args__ = (
         Index("ix_oversight_target", "target_username", "status"),
     )
+
+
+class FieldKind(str, enum.Enum):
+    """Тип поля в форме вещи."""
+
+    TEXT = "TEXT"
+    TEXTAREA = "TEXTAREA"
+    NUMBER = "NUMBER"
+    MONEY = "MONEY"
+    SELECT = "SELECT"
+
+
+class StoreField(Base):
+    """Настройка формы вещи: какие поля показывать, как называть, в каком порядке.
+
+    Два вида полей.
+
+    Встроенные (`builtin=True`) соответствуют колонкам таблицы items: их
+    можно скрыть, переименовать, переставить и сделать обязательными, но не
+    удалить — на них завязаны аналитика, публикация и подсказки.
+
+    Свои (`builtin=False`) магазин заводит сам под свой товар: «мерка по
+    бедрам», «номер лота», «где взял». Колонок для них нет и не будет —
+    значения лежат в items.extra, иначе каждая правка формы требовала бы
+    миграции базы.
+    """
+
+    __tablename__ = "store_fields"
+    __table_args__ = (
+        UniqueConstraint("store_id", "key", name="uq_field_store_key"),
+        Index("ix_field_store_pos", "store_id", "position"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("stores.id"), index=True
+    )
+    #: Для встроенных — имя колонки items. Для своих — слаг, ключ в extra.
+    key: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(60))
+    kind: Mapped[FieldKind] = mapped_column(
+        SAEnum(FieldKind, name="field_kind_enum"), default=FieldKind.TEXT
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Варианты для SELECT. Пусто у остальных типов.
+    options: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, server_default="{}"
+    )
+    #: Подсказка под полем — магазин может объяснить сотруднику, что писать.
+    hint: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = _created()

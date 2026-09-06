@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { openAdmin } from '@/app/navigation'
+import { openAdmin, openFields } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
@@ -18,6 +18,11 @@ const toast = useToastStore()
 function goAdmin(): void {
   hapticSelection()
   openAdmin()
+}
+
+function goFields(): void {
+  hapticSelection()
+  openFields()
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -152,6 +157,18 @@ function exportCsv(): void {
           </button>
         </div>
         <p v-else class="empty">Нет доступных складов.</p>
+      </section>
+
+      <!-- Форма вещи (только OWNER) -->
+      <section v-if="session.isOwner" class="block">
+        <h2 class="block-title">Карточка вещи</h2>
+        <button class="nav-row tap" @click="goFields">
+          <span class="nav-row-main">
+            <span class="nav-row-title">Поля карточки</span>
+            <span class="nav-row-sub">Что спрашивать при добавлении вещи</span>
+          </span>
+          <span class="nav-row-chevron" aria-hidden="true">›</span>
+        </button>
       </section>
 
       <!-- Команда (только OWNER) -->

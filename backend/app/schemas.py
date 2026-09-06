@@ -44,6 +44,8 @@ class ItemCreate(ItemBase):
     cost_currency: str = "BYN"
     price_currency: str = "BYN"
     photo_file_ids: list[str] = Field(default_factory=list)
+    #: Значения полей, заведённых магазином (см. StoreField).
+    extra: dict[str, str] = Field(default_factory=dict)
 
 
 class ItemUpdate(BaseModel):
@@ -70,6 +72,7 @@ class ItemUpdate(BaseModel):
     price_currency: str | None = Field(None, max_length=3)
     sales_platform: str | None = Field(None, max_length=40)
     ad_url: str | None = Field(None, max_length=300)
+    extra: dict[str, str] | None = None
 
 
 class ItemOut(BaseModel):
@@ -90,6 +93,8 @@ class ItemOut(BaseModel):
     sleeve_cm: float | None = None
     description: str | None
     photo_count: int = 0
+    #: Значения своих полей склада.
+    extra: dict[str, str] = Field(default_factory=dict)
     status: ItemStatus
     version: int
     listed_date: datetime | None
@@ -509,3 +514,47 @@ class OversightOut(BaseModel):
     store_name: str | None = None
     status: str
     created_at: datetime
+
+
+# ------------------------- Настраиваемая форма вещи ------------------------- #
+
+
+class FieldOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    key: str
+    label: str
+    kind: str
+    enabled: bool
+    required: bool
+    position: int
+    builtin: bool
+    options: list[str] = []
+    hint: str | None = None
+    #: Можно ли выключить или сделать необязательным. Без вычисленного флага
+    #: клиенту пришлось бы дублировать правило, а оно живёт на сервере.
+    locked: bool = False
+
+
+class FieldPatch(BaseModel):
+    """Правка одного поля. Отсутствующие ключи не меняются."""
+
+    id: uuid.UUID
+    label: str | None = Field(None, min_length=1, max_length=60)
+    enabled: bool | None = None
+    required: bool | None = None
+    position: int | None = None
+    hint: str | None = Field(None, max_length=120)
+    options: list[str] | None = None
+
+
+class FieldsUpdate(BaseModel):
+    fields: list[FieldPatch]
+
+
+class FieldCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=60)
+    kind: str = "TEXT"
+    required: bool = False
+    hint: str | None = Field(None, max_length=120)
+    options: list[str] = []

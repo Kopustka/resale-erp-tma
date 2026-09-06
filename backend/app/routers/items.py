@@ -27,6 +27,7 @@ from ..schemas import (
     StatusPatch,
 )
 from ..services import audit, fx, idempotency
+from ..services import fields as fields_svc
 from ..services.fsm import SOLD_STATUSES, can_transition, next_status
 
 settings = get_settings()
@@ -60,6 +61,7 @@ def to_out(item: Item, *, show_finance: bool) -> ItemOut:
         "sold_date": item.sold_date,
         "created_at": item.created_at,
         "sales_platform": item.sales_platform,
+        "extra": item.extra or {},
     }
     # list_price (цена в объявлении) видна всем ролям — это публичный ценник.
     data.update(
@@ -199,6 +201,15 @@ async def edit_item(
 
     data = payload.model_dump(exclude_unset=True)
 
+    # Свои поля дописываем поверх имеющихся, а не заменяем словарь целиком:
+    # иначе правка одного поля стирала бы остальные.
+    incoming_extra = data.pop("extra", None)
+    if incoming_extra is not None:
+        form = await fields_svc.ensure_defaults(session, member.store_id)
+        merged = dict(item.extra or {})
+        merged.update(fields_svc.filter_extra(incoming_extra, form))
+        item.extra = merged
+
     # Деньги/валюты меняем только финансовым ролям и с полной переконвертацией.
     money_present = any(k in data for k in MONEY_KEYS)
     if money_present:
@@ -283,15 +294,25 @@ async def create_item(
 
     data = payload.model_dump()
 
+    # Форма склада настраиваемая: значения своих полей приходят вперемешку с
+    # колонками, разделяем их и заодно проверяем то, что магазин пометил
+    # обязательным. Проверять на клиенте мало: правила живут на сервере.
+    form = await fields_svc.ensure_defaults(session, member.store_id)
+    extra = fields_svc.filter_extra(data.pop("extra", None) or {}, form)
+    data, from_body = fields_svc.split_payload(data, form)
+    extra.update(from_body)
+    gaps = fields_svc.missing_required(form, data, extra)
+    if gaps:
+        raise HTTPException(422, "Заполните: " + ", ".join(gaps))
+
     # Конвертация денег в базовую валюту склада (orig+база храним отдельно).
     base = await _store_base_currency(session, member.store_id)
     money_in = {k: data.pop(k, None) for k in MONEY_KEYS}
     money_kwargs = await _build_money(money_in, base)
 
-    photos = data.get("photo_file_ids") or []
-    need_title = not data["title"].strip()
-    need_descr = not (data.get("description") or "").strip()
-    if need_title:
+    # Название необязательно: если его не ввели, собираем из бренда и
+    # категории. Раньше пустое дозаполняла нейросеть по фото — она отложена.
+    if not data["title"].strip():
         data["title"] = f"{data['brand']} {data['category']}".strip()[:100]
 
     repo = ItemRepository(session)
@@ -300,6 +321,7 @@ async def create_item(
         store_id=member.store_id,
         sku=sku,
         purchaser_id=user.id,
+        extra=extra,
         **data,
         **money_kwargs,
     )
@@ -316,26 +338,8 @@ async def create_item(
     )
     await session.commit()
     await session.refresh(item)
-
-    # AI-генерация названия/описания — В ФОНЕ: сохранение мгновенное,
-    # поля дозаполнятся через несколько секунд (фронт подтянет).
-    if settings.gemini_api_key and photos and (need_title or need_descr):
-        asyncio.create_task(
-            _bg_generate_description(
-                item.id,
-                photos,
-                {
-                    "brand": data.get("brand"),
-                    "category": data.get("category"),
-                    "size": data.get("size"),
-                    "color": data.get("color"),
-                    "condition": data.get("condition"),
-                },
-                need_title,
-                need_descr,
-            )
-        )
-
+    # Здесь запускалась фоновая генерация названия и описания по фото. Она
+    # отложена вместе с остальной нейросетью — см. _parked/README.md.
     return to_out(item, show_finance=_can_see_finance(member))
 
 

@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import admin, analytics, items, media, stores
+from .routers import admin, analytics, fields, items, media, stores
 
 settings = get_settings()
 log = logging.getLogger("api")
@@ -45,6 +45,8 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS discount_template TEXT",
     # Состояние вещи писали словами, а колонка была рассчитана на "8/10".
     "ALTER TABLE items ALTER COLUMN condition TYPE VARCHAR(32)",
+    # Значения полей, заведённых магазином самостоятельно.
+    "ALTER TABLE items ADD COLUMN IF NOT EXISTS extra JSONB NOT NULL DEFAULT '{}'::jsonb",
 )
 
 # Значения enum'ов: create_all создаёт тип при первом запуске, но новые
@@ -239,3 +241,4 @@ app.include_router(analytics.router)
 app.include_router(stores.router)
 app.include_router(media.router)
 app.include_router(admin.router)
+app.include_router(fields.router)

@@ -6,7 +6,7 @@ import { reactive, readonly } from 'vue'
 import type { ItemStatus } from '@/shared/api/types'
 
 export type Tab = 'inventory' | 'bi' | 'settings'
-export type Overlay = 'create' | 'detail' | 'admin' | null
+export type Overlay = 'create' | 'detail' | 'admin' | 'fields' | null
 
 interface DrilldownPayload {
   ids?: string[]
@@ -48,6 +48,11 @@ export function openDetail(itemId: string): void {
 /** Оверлей «Админ-панель» (из настроек, только OWNER; сервер проверяет роль). */
 export function openAdmin(): void {
   state.overlay = 'admin'
+}
+
+/** Оверлей «Поля карточки» (из настроек, только OWNER). */
+export function openFields(): void {
+  state.overlay = 'fields'
 }
 
 export function closeOverlay(): void {

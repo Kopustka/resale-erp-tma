@@ -3,6 +3,9 @@ import { http, uploadFile } from './http'
 import type {
   ActivityPage,
   AdminScope,
+  FieldCreate,
+  FieldPatch,
+  FormField,
   AnalyticsSummary,
   Currency,
   InviteOut,
@@ -134,4 +137,12 @@ export const adminApi = {
   requestOversight: (username: string) =>
     http.post<OversightOut>(`${V1}/admin/oversight`, { username }),
   dropOversight: (id: string) => http.del<void>(`${V1}/admin/oversight/${id}`),
+}
+
+// -------------------------- Поля формы вещи -------------------------- //
+export const fieldsApi = {
+  list: () => http.get<FormField[]>(`${V1}/fields`),
+  save: (fields: FieldPatch[]) => http.put<FormField[]>(`${V1}/fields`, { fields }),
+  create: (payload: FieldCreate) => http.post<FormField>(`${V1}/fields`, payload),
+  remove: (id: string) => http.del<void>(`${V1}/fields/${id}`),
 }
