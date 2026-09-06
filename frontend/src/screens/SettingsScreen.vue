@@ -266,7 +266,7 @@ function exportCsv(): void {
 }
 .title {
   margin: 0;
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -278,33 +278,33 @@ function exportCsv(): void {
   padding: 8px var(--pad) calc(var(--nav-height) + var(--safe-bottom));
 }
 .block {
-  margin-bottom: 20px;
+  margin-bottom: 17.5px;
 }
 .block-title {
-  margin: 0 0 10px;
-  font-size: 17px;
+  margin: 0 0 8.5px;
+  font-size: 15px;
   font-weight: 650;
   color: var(--fg-0);
 }
 .card {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: var(--r-card);
   background: var(--ink-1);
 }
 .note {
-  margin: 0 0 12px;
-  font-size: 12.5px;
+  margin: 0 0 10.5px;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--fg-2);
 }
 .empty,
 .loading {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--fg-1);
 }
 .loading {
-  margin-top: 12px;
+  margin-top: 10.5px;
 }
 
 /* --- Роль --- */
@@ -312,18 +312,18 @@ function exportCsv(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10.5px;
 }
 .role-label {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--fg-1);
 }
 .role-pill {
-  padding: 7px 14px;
+  padding: 6px 12px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-0);
-  font-size: 13.5px;
+  font-size: 11.5px;
   font-weight: 650;
 }
 
@@ -337,10 +337,10 @@ function exportCsv(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10.5px;
   width: 100%;
-  min-height: 60px;
-  padding: 10px 16px;
+  min-height: 52px;
+  padding: 8.5px 14px;
   border-radius: var(--r-card);
   background: var(--ink-1);
   color: var(--fg-0);
@@ -359,11 +359,11 @@ function exportCsv(): void {
   min-width: 0;
 }
 .store-name {
-  font-size: 15.5px;
+  font-size: 13.5px;
   font-weight: 650;
 }
 .store-role {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 .check {
@@ -376,10 +376,10 @@ function exportCsv(): void {
 .nav-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10.5px;
   width: 100%;
-  min-height: 60px;
-  padding: 10px 16px;
+  min-height: 52px;
+  padding: 8.5px 14px;
   border-radius: var(--r-card);
   background: var(--ink-1);
   text-align: left;
@@ -391,22 +391,22 @@ function exportCsv(): void {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2.5px;
   min-width: 0;
 }
 .nav-row-title {
-  font-size: 15.5px;
+  font-size: 13.5px;
   font-weight: 650;
   color: var(--fg-0);
 }
 .nav-row-sub {
-  font-size: 12.5px;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--fg-2);
 }
 .nav-row-chevron {
   flex: none;
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1;
   color: var(--fg-2);
 }
@@ -414,7 +414,7 @@ function exportCsv(): void {
 /* --- Участники --- */
 .members {
   margin-top: var(--gap);
-  padding: 2px 16px;
+  padding: 2px 14px;
   border-radius: var(--r-card);
   background: var(--ink-1);
 }
@@ -425,8 +425,8 @@ function exportCsv(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
+  gap: 10.5px;
+  padding: 10.5px 0;
 }
 .member + .member {
   border-top: 1px solid var(--ink-2);
@@ -438,26 +438,26 @@ function exportCsv(): void {
   min-width: 0;
 }
 .m-name {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
 }
 .m-uname {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 .m-role {
   flex: none;
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--fg-1);
 }
 .revoke {
   flex: none;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--danger);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 650;
 }
 
@@ -467,19 +467,19 @@ function exportCsv(): void {
 }
 .lbl {
   display: block;
-  margin-bottom: 6px;
-  font-size: 12.5px;
+  margin-bottom: 5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 .field {
   width: 100%;
-  height: 50px;
-  padding: 0 14px;
+  height: 43.5px;
+  padding: 0 12px;
   border: none;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-0);
-  font-size: 16px;
+  font-size: 14px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
@@ -492,17 +492,17 @@ function exportCsv(): void {
 }
 .role-select {
   display: flex;
-  gap: 8px;
-  margin: 10px 0 12px;
+  gap: 7px;
+  margin: 8.5px 0 10.5px;
 }
 .role-opt {
   flex: 1;
-  height: 44px;
-  min-height: 44px;
+  height: 38.5px;
+  min-height: 38.5px;
   border-radius: var(--r-pill);
   background: var(--ink-1);
   color: var(--fg-1);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 650;
 }
 .role-opt.sel {
@@ -514,10 +514,10 @@ function exportCsv(): void {
 .btn-primary,
 .btn-secondary {
   width: 100%;
-  height: 50px;
-  min-height: 50px;
+  height: 43.5px;
+  min-height: 43.5px;
   border-radius: var(--r-field);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 650;
 }
 .btn-primary {
@@ -535,16 +535,16 @@ function exportCsv(): void {
 /* --- Валюта --- */
 .cur-row {
   display: flex;
-  gap: 8px;
+  gap: 7px;
 }
 .cur-opt {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 46px;
-  min-height: 46px;
+  gap: 5px;
+  height: 40px;
+  min-height: 40px;
   border-radius: var(--r-pill);
   background: var(--ink-1);
   color: var(--fg-1);
@@ -557,18 +557,18 @@ function exportCsv(): void {
   opacity: 0.6;
 }
 .cur-code {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 650;
 }
 .cur-sym {
-  font-size: 13px;
+  font-size: 11.5px;
   opacity: 0.75;
 }
 
 .export-note {
-  margin: 10px 0 0;
+  margin: 8.5px 0 0;
 }
 .bottom-pad {
-  height: 16px;
+  height: 14px;
 }
 </style>

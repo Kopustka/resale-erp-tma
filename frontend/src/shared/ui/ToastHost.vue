@@ -68,23 +68,23 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 7px;
+  padding: 0 10.5px;
   pointer-events: none;
 }
 .toast {
   pointer-events: auto;
-  max-width: 480px;
+  max-width: 417.5px;
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10.5px;
+  padding: 10.5px 12px;
   border-radius: var(--radius);
   background: var(--tg-theme-secondary-bg-color);
   color: var(--tg-theme-text-color);
   border-left: 3px solid var(--tg-theme-hint-color);
-  font-size: 14px;
+  font-size: 12px;
 }
 .toast-success {
   border-left-color: var(--accent-positive);
@@ -100,8 +100,8 @@ onBeforeUnmount(() => {
   flex: none;
   font-weight: 700;
   color: var(--tg-theme-link-color);
-  padding: 6px 8px;
-  min-height: 32px;
+  padding: 5px 7px;
+  min-height: 28px;
 }
 
 .toast-enter-active,

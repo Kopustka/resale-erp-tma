@@ -90,19 +90,19 @@ function reset(): void {
 
 <style scoped>
 .section-label {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--tg-theme-hint-color);
-  margin: 14px 0 8px;
+  margin: 12px 0 7px;
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 .chip {
-  padding: 4px;
-  border-radius: 8px;
+  padding: 3.5px;
+  border-radius: 7px;
   border: 1px solid transparent;
   background: var(--tg-theme-secondary-bg-color);
 }
@@ -111,14 +111,14 @@ function reset(): void {
 }
 .actions {
   display: flex;
-  gap: 10px;
-  margin-top: 20px;
+  gap: 8.5px;
+  margin-top: 17.5px;
 }
 .btn {
   flex: 1;
   min-height: var(--tap);
   border-radius: var(--radius);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
 }
 .btn-primary {

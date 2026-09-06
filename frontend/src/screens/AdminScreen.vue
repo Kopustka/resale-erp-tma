@@ -583,7 +583,7 @@ async function dropWatch(w: OversightOut): Promise<void> {
 .head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   padding: calc(var(--safe-top) + 10px) 12px 10px;
   border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
 }
@@ -593,19 +593,19 @@ async function dropWatch(w: OversightOut): Promise<void> {
   justify-content: center;
 }
 .title {
-  font-size: 18px;
+  font-size: 15.5px;
   font-weight: 700;
   margin: 0;
 }
 .panes {
   display: flex;
-  padding: 0 12px;
+  padding: 0 10.5px;
   border-bottom: 1px solid var(--tg-theme-secondary-bg-color);
 }
 .pane-tab {
   flex: 1;
-  padding: 12px 0;
-  font-size: 15px;
+  padding: 10.5px 0;
+  font-size: 13px;
   font-weight: 600;
   color: var(--tg-theme-hint-color);
   border-bottom: 2px solid transparent;
@@ -616,9 +616,9 @@ async function dropWatch(w: OversightOut): Promise<void> {
 }
 .chips {
   display: flex;
-  gap: 8px;
+  gap: 7px;
   overflow-x: auto;
-  padding: 10px 16px;
+  padding: 8.5px 14px;
   scrollbar-width: none;
 }
 .chips::-webkit-scrollbar {
@@ -629,9 +629,9 @@ async function dropWatch(w: OversightOut): Promise<void> {
 }
 .chip {
   flex: 0 0 auto;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 13px;
+  padding: 5px 10.5px;
+  border-radius: 869px;
+  font-size: 11.5px;
   font-weight: 600;
   background: var(--tg-theme-secondary-bg-color);
   color: var(--tg-theme-hint-color);
@@ -643,9 +643,9 @@ async function dropWatch(w: OversightOut): Promise<void> {
 .active-filter {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 16px 8px;
-  font-size: 13px;
+  gap: 7px;
+  padding: 0 14px 7px;
+  font-size: 11.5px;
   color: var(--tg-theme-hint-color);
 }
 .scroll {
@@ -655,7 +655,7 @@ async function dropWatch(w: OversightOut): Promise<void> {
   -webkit-overflow-scrolling: touch;
 }
 .pad {
-  padding: 24px 0;
+  padding: 21px 0;
   text-align: center;
 }
 .hint {
@@ -665,12 +665,12 @@ async function dropWatch(w: OversightOut): Promise<void> {
   color: var(--accent-negative);
 }
 .day-title {
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--tg-theme-hint-color);
-  margin: 16px 0 6px;
+  margin: 14px 0 5px;
 }
 .feed,
 .team {
@@ -684,14 +684,14 @@ async function dropWatch(w: OversightOut): Promise<void> {
 .event {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8.5px;
+  padding: 8.5px 10.5px;
   border-radius: var(--radius);
   background: var(--tg-theme-secondary-bg-color);
 }
 .icon {
-  font-size: 16px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 17.5px;
   flex: 0 0 auto;
 }
 .body {
@@ -700,127 +700,127 @@ async function dropWatch(w: OversightOut): Promise<void> {
 }
 .line {
   margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 17.5px;
 }
 .actor {
   font-weight: 700;
   color: var(--tg-theme-link-color);
 }
 .what {
-  margin-left: 4px;
+  margin-left: 3.5px;
 }
 .detail {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--tg-theme-hint-color);
   overflow-wrap: anywhere;
 }
 .when {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 9.5px;
   color: var(--tg-theme-hint-color);
-  padding-top: 3px;
+  padding-top: 2.5px;
 }
 .more {
-  margin: 16px 0 0;
+  margin: 14px 0 0;
   width: 100%;
 }
 .team {
   gap: var(--gap);
-  margin-top: 8px;
+  margin-top: 7px;
 }
 .member {
   background: var(--tg-theme-secondary-bg-color);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 10.5px;
 }
 .member.compact {
-  padding: 10px 12px;
+  padding: 8.5px 10.5px;
 }
 .member-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
 }
 .name {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
 }
 .sub {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--tg-theme-hint-color);
 }
 .ops {
-  font-size: 20px;
+  font-size: 17.5px;
   font-weight: 700;
   color: var(--tg-theme-link-color);
 }
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  margin-top: 10px;
+  gap: 3.5px;
+  margin-top: 8.5px;
 }
 .metric {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px 2px;
-  border-radius: 8px;
+  padding: 5px 2px;
+  border-radius: 7px;
   background: var(--tg-theme-bg-color);
 }
 .metric .v {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
 }
 .metric .k {
-  font-size: 10px;
+  font-size: 8.5px;
   color: var(--tg-theme-hint-color);
 }
 .member-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
+  gap: 7px;
+  margin-top: 8.5px;
+  font-size: 10.5px;
 }
 .block {
-  padding: 16px 0 4px;
+  padding: 14px 0 3.5px;
 }
 .sec-title {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 700;
-  margin: 0 0 8px;
+  margin: 0 0 7px;
   color: var(--tg-theme-hint-color);
 }
 .note {
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--tg-theme-hint-color);
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   line-height: 1.5;
 }
 .row {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 7px;
+  margin-top: 10.5px;
 }
 .scope-row {
   padding-bottom: 0;
 }
 .watch-note {
   margin: 0;
-  padding: 6px 16px 0;
-  font-size: 12px;
+  padding: 5px 14px 0;
+  font-size: 10.5px;
   line-height: 1.4;
   color: var(--tg-theme-hint-color);
 }
 .wide {
   width: 100%;
-  margin-top: 12px;
+  margin-top: 10.5px;
 }
 </style>

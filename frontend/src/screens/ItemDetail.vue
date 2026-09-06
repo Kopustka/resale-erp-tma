@@ -507,7 +507,7 @@ const photoIndexes = computed(() =>
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8.5px;
   padding: calc(var(--safe-top) + 10px) var(--pad) 10px;
   background: var(--ink-0);
 }
@@ -516,10 +516,10 @@ const photoIndexes = computed(() =>
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
+  width: 35px;
+  height: 35px;
+  min-width: 35px;
+  min-height: 35px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-0);
@@ -530,16 +530,16 @@ const photoIndexes = computed(() =>
 .head-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
 }
 /* Артикул — служебное число: мелко, приглушённо, но табличными цифрами. */
 .sku {
-  padding: 5px 10px;
+  padding: 4.5px 8.5px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-2);
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -556,50 +556,50 @@ const photoIndexes = computed(() =>
   display: flex;
   gap: var(--gap);
   overflow-x: auto;
-  padding: 8px 0 4px;
+  padding: 7px 0 3.5px;
   scroll-snap-type: x mandatory;
 }
 .photo {
   flex: none;
-  width: 152px;
-  height: 196px;
+  width: 132px;
+  height: 170.5px;
   scroll-snap-align: start;
 }
 .photo :deep(.auth-image) {
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--ink-1);
 }
 
 /* ------------------------------ Секции ------------------------------ */
 .block {
-  padding: 16px 0 4px;
+  padding: 14px 0 3.5px;
 }
 .block-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--fg-0);
-  margin: 0 0 10px;
+  margin: 0 0 8.5px;
 }
 .card {
   background: var(--ink-1);
   border-radius: var(--r-card);
-  padding: 14px;
+  padding: 12px;
 }
 
 /* --------------------------- Статус и шаги --------------------------- */
 .status-now {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 7px;
+  margin-bottom: 10.5px;
 }
 .cap {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 .status-name {
-  font-size: 20px;
+  font-size: 17.5px;
   font-weight: 700;
   letter-spacing: -0.025em;
 }
@@ -614,14 +614,14 @@ const photoIndexes = computed(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 50px;
-  padding: 0 20px;
+  gap: 7px;
+  height: 43.5px;
+  padding: 0 17.5px;
   border-radius: var(--r-pill);
   background: var(--brand);
   color: var(--brand-ink);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   letter-spacing: -0.01em;
 }
 .chip:active {
@@ -634,17 +634,17 @@ const photoIndexes = computed(() =>
 .rollback {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
+  gap: 5px;
+  height: 26px;
   /* Перебиваем утилиту .tap (min-height 44px): откат — мелкая пилюля. */
-  min-height: 30px;
-  margin-top: 12px;
-  padding: 0 14px;
+  min-height: 26px;
+  margin-top: 10.5px;
+  padding: 0 12px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-1);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 11px;
 }
 .rollback:active {
   background: var(--ink-3);
@@ -654,7 +654,7 @@ const photoIndexes = computed(() =>
 }
 .empty-note {
   margin: 0;
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--fg-2);
 }
 
@@ -663,25 +663,25 @@ const photoIndexes = computed(() =>
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
 }
 .lbl {
   display: block;
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
-  margin: 12px 0 6px;
+  margin: 10.5px 0 5px;
 }
 .lbl-row .lbl {
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .regen-btn {
   flex: none;
-  height: 30px;
-  padding: 0 14px;
+  height: 26px;
+  padding: 0 12px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-1);
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 600;
 }
 .regen-btn:active {
@@ -692,13 +692,13 @@ const photoIndexes = computed(() =>
 }
 .field {
   width: 100%;
-  height: 50px;
-  padding: 0 14px;
+  height: 43.5px;
+  padding: 0 12px;
   border: none;
   border-radius: var(--r-field);
   background-color: var(--ink-1);
   color: var(--fg-0);
-  font-size: 16px;
+  font-size: 14px;
   outline: none;
   appearance: none;
   -webkit-appearance: none;
@@ -714,7 +714,7 @@ const photoIndexes = computed(() =>
 }
 /* Свой шеврон вместо системного: appearance: none его убирает. */
 .select {
-  padding-right: 40px;
+  padding-right: 35px;
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23767D89' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 14px center;
@@ -722,14 +722,14 @@ const photoIndexes = computed(() =>
 }
 /* Числа в полях — тот же вес, что и суммы в списке вещей. */
 .big {
-  font-size: 20px;
+  font-size: 17.5px;
   font-weight: 700;
   letter-spacing: -0.025em;
 }
 .area {
   height: auto;
-  min-height: 108px;
-  padding: 14px;
+  min-height: 94px;
+  padding: 12px;
   line-height: 1.45;
   resize: vertical;
 }
@@ -745,13 +745,13 @@ const photoIndexes = computed(() =>
 }
 .copy-btn {
   width: 100%;
-  height: 50px;
-  margin-top: 16px;
+  height: 43.5px;
+  margin-top: 14px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-0);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
 }
 .copy-btn:active {
   background: var(--ink-3);
@@ -765,25 +765,25 @@ const photoIndexes = computed(() =>
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 16px;
-  padding: 14px;
+  gap: 3.5px 8.5px;
+  margin-top: 14px;
+  padding: 12px;
   background: var(--ink-1);
   border-radius: var(--r-card);
 }
 .profit-value {
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: -0.025em;
 }
 .profit-note {
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 
 /* ------------------------------ Действия ------------------------------ */
 .danger-block {
-  padding-top: 20px;
+  padding-top: 17.5px;
 }
 .actions {
   display: flex;
@@ -791,11 +791,11 @@ const photoIndexes = computed(() =>
 }
 .act {
   flex: 1;
-  height: 50px;
-  padding: 0 12px;
+  height: 43.5px;
+  padding: 0 10.5px;
   border-radius: var(--r-pill);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   letter-spacing: -0.01em;
 }
 .act:disabled {
@@ -821,7 +821,7 @@ const photoIndexes = computed(() =>
   color: var(--brand-ink);
 }
 .scroll-pad {
-  height: 20px;
+  height: 17.5px;
 }
 
 /* --------------------------- Липкое сохранение --------------------------- */
@@ -831,11 +831,11 @@ const photoIndexes = computed(() =>
 }
 .save {
   width: 100%;
-  height: 50px;
+  height: 43.5px;
   border-radius: var(--r-pill);
   background: var(--brand);
   color: var(--brand-ink);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }

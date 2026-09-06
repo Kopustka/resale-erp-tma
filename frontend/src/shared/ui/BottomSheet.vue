@@ -93,26 +93,26 @@ function onUp(): void {
   will-change: transform;
 }
 .grab-zone {
-  padding: 10px 0 4px;
+  padding: 8.5px 0 3.5px;
   display: flex;
   justify-content: center;
   touch-action: none;
   cursor: grab;
 }
 .grabber {
-  width: 36px;
-  height: 4px;
+  width: 31.5px;
+  height: 3.5px;
   border-radius: 2px;
   background: var(--tg-theme-hint-color);
   opacity: 0.4;
 }
 .sheet-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
-  padding: 4px 16px 8px;
+  padding: 3.5px 14px 7px;
 }
 .sheet-body {
-  padding: 4px 16px 8px;
+  padding: 3.5px 14px 7px;
   overflow-y: auto;
 }
 

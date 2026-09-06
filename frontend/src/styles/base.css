@@ -42,15 +42,15 @@
   --s-ship-ink: #3FCF8E;
 
   /* Геометрия: крупные скругления, шкала кратна 2. */
-  --r-card: 20px;
-  --r-field: 16px;
-  --r-tile: 18px;
-  --r-sm: 12px;
-  --r-pill: 999px;
-  --gap: 12px;
-  --pad: 16px;
-  --tap: 44px;
-  --nav-height: 62px;
+  --r-card: 17px;
+  --r-field: 14px;
+  --r-tile: 16px;
+  --r-sm: 10px;
+  --r-pill: 869px;
+  --gap: 10px;
+  --pad: 14px;
+  --tap: 40px;   /* меньше делать нельзя: это площадь под палец */
+  --nav-height: 54px;
 
   /* Совместимость: старые компоненты и отложенный код читают переменные
      Telegram. Перенаправляем их на палитру выше — интерфейс поднимается
@@ -138,7 +138,9 @@ input,
 textarea,
 select {
   font-family: inherit;
-  font-size: 16px; /* защита от авто-зума iOS */
+  /* Ровно 16px и не меньше: на меньшем Safari увеличивает страницу
+     при фокусе, и вёрстка уезжает. Уменьшению не подлежит. */
+  font-size: 16px;
   color: var(--tg-theme-text-color);
   background: var(--tg-theme-bg-color);
 }

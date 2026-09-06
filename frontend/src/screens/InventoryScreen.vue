@@ -57,10 +57,10 @@ function showStale(): void {
 const session = useSessionStore()
 const { items: itemList, loading, loadingMore, error, isEmpty } = storeToRefs(items)
 
-// Высота строки = карточка (118) + зазор (10). Обе величины заданы в CSS —
+// Высота строки = карточка (102) + зазор (9). Обе величины заданы в CSS —
 // в ItemCard и в .row ниже. Расходиться им нельзя: виртуальный список
 // считает позиции по этому числу, и при рассинхроне прокрутка поедет.
-const ROW_HEIGHT = 128
+const ROW_HEIGHT = 111
 const { list, containerProps, wrapperProps } = useVirtualList(itemList, {
   itemHeight: ROW_HEIGHT,
   overscan: 6,
@@ -379,18 +379,18 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8.5px;
+  margin-bottom: 14px;
 }
 .store {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   max-width: 70%;
-  padding: 7px 13px 7px 10px;
+  padding: 6px 11.5px 6px 8.5px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
@@ -398,16 +398,16 @@ onBeforeUnmount(() => {
 }
 .store-dot {
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--s-ship);
 }
 .icon-btn {
   position: relative;
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 38.5px;
+  height: 38.5px;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-1);
@@ -419,8 +419,8 @@ onBeforeUnmount(() => {
   color: var(--fg-0);
 }
 .head-top .icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 33px;
+  height: 33px;
   border-radius: 50%;
   background: var(--ink-2);
 }
@@ -428,33 +428,33 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 5px;
   right: 5px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3.5px;
+  border-radius: 7px;
   background: var(--brand);
   color: var(--brand-ink);
-  font-size: 10px;
+  font-size: 8.5px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 14px;
   text-align: center;
 }
 .hero-label {
-  margin: 0 0 6px;
-  font-size: 13px;
+  margin: 0 0 5px;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 .hero-value {
   margin: 0;
-  font-size: 40px;
-  line-height: 42px;
+  font-size: 35px;
+  line-height: 36.5px;
   font-weight: 700;
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
 }
 .hero-sub {
-  margin: 10px 0 0;
-  font-size: 13px;
+  margin: 8.5px 0 0;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 .hero-sub b {
@@ -462,18 +462,18 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 .conv {
-  margin-left: 12px;
+  margin-left: 10.5px;
   color: var(--fg-2);
 }
 .cur-btn {
   flex: none;
-  min-width: 38px;
-  height: 38px;
-  padding: 0 12px;
+  min-width: 33px;
+  height: 33px;
+  padding: 0 10.5px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   color: var(--fg-1);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
 }
 .cur-btn.on {
@@ -481,23 +481,23 @@ onBeforeUnmount(() => {
   color: var(--brand);
 }
 .cur-note {
-  margin: 0 0 14px;
-  font-size: 13px;
-  line-height: 18px;
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  line-height: 15.5px;
   color: var(--fg-1);
 }
 .cur-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 .cur-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10.5px;
   width: 100%;
-  height: 54px;
-  padding: 0 14px;
+  height: 47px;
+  padding: 0 12px;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-0);
@@ -508,33 +508,33 @@ onBeforeUnmount(() => {
   color: var(--brand);
 }
 .cur-sym {
-  width: 26px;
-  font-size: 18px;
+  width: 22.5px;
+  font-size: 15.5px;
   font-weight: 700;
 }
 .cur-code {
   flex: 1;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--fg-0);
 }
 .cur-base {
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--fg-2);
 }
 .find {
   display: flex;
-  gap: 10px;
-  margin: 18px 0 0;
+  gap: 8.5px;
+  margin: 15.5px 0 0;
 }
 .field {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 50px;
-  padding: 0 14px;
+  gap: 8.5px;
+  height: 43.5px;
+  padding: 0 12px;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-2);
@@ -555,13 +555,13 @@ onBeforeUnmount(() => {
   -webkit-appearance: none;
 }
 .find .icon-btn {
-  height: 50px;
-  width: 50px;
+  height: 43.5px;
+  width: 43.5px;
 }
 .add {
   flex: none;
-  width: 50px;
-  height: 50px;
+  width: 43.5px;
+  height: 43.5px;
   border-radius: var(--r-field);
   background: var(--brand);
   color: var(--brand-ink);
@@ -575,10 +575,10 @@ onBeforeUnmount(() => {
 .stale {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8.5px;
   width: 100%;
-  margin-top: 12px;
-  padding: 11px 12px;
+  margin-top: 10.5px;
+  padding: 9.5px 10.5px;
   border-radius: var(--r-field);
   background: color-mix(in srgb, var(--s-prep) 13%, transparent);
   color: var(--fg-0);
@@ -586,15 +586,15 @@ onBeforeUnmount(() => {
 }
 .stale-n {
   flex: none;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--s-prep);
   font-variant-numeric: tabular-nums;
 }
 .stale-t {
   flex: 1;
-  font-size: 13px;
-  line-height: 17px;
+  font-size: 11.5px;
+  line-height: 15px;
   color: var(--fg-1);
 }
 .stale svg {
@@ -608,7 +608,7 @@ onBeforeUnmount(() => {
   padding: 8px var(--pad) calc(var(--nav-height) + var(--safe-bottom) + 12px);
 }
 .row {
-  padding-bottom: 10px;
+  padding-bottom: 9px;
 }
 .state {
   flex: 1;
@@ -616,13 +616,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 40px 20px;
+  gap: 10.5px;
+  padding: 35px 17.5px;
   text-align: center;
 }
 .retry,
 .more {
-  padding: 10px;
+  padding: 8.5px;
   text-align: center;
 }
 .retry {

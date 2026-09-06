@@ -194,19 +194,19 @@ function barWidth(avgDays: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8.5px;
   padding: calc(var(--safe-top) + 10px) var(--pad) 6px;
 }
 .title {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 .icon-btn {
   flex: none;
-  width: 38px;
-  height: 38px;
+  width: 33px;
+  height: 33px;
   border-radius: 50%;
   background: var(--ink-2);
   color: var(--fg-1);
@@ -222,8 +222,8 @@ function barWidth(avgDays: number): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 40px 20px;
+  gap: 10.5px;
+  padding: 35px 17.5px;
   text-align: center;
 }
 .retry {
@@ -237,22 +237,22 @@ function barWidth(avgDays: number): string {
   padding: 4px var(--pad) calc(var(--nav-height) + var(--safe-bottom) + 12px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10.5px;
 }
 
 /* --------------------------- Главная цифра --------------------------- */
 .hero {
-  padding: 6px 0 4px;
+  padding: 5px 0 3.5px;
 }
 .hero-label {
-  margin: 0 0 6px;
-  font-size: 13px;
+  margin: 0 0 5px;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 .hero-value {
   margin: 0;
-  font-size: 40px;
-  line-height: 42px;
+  font-size: 35px;
+  line-height: 36.5px;
   font-weight: 700;
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
@@ -262,36 +262,36 @@ function barWidth(avgDays: number): string {
 .tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8.5px;
 }
 .tile {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 14px;
+  padding: 12px;
   border-radius: var(--r-card);
   background: var(--ink-1);
   text-align: left;
   color: var(--fg-0);
 }
 .tile-label {
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 .tile-value {
-  margin-top: 4px;
-  font-size: 28px;
-  line-height: 32px;
+  margin-top: 3.5px;
+  font-size: 24.5px;
+  line-height: 28px;
   font-weight: 700;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 .tile-note {
   margin-top: auto;
-  padding-top: 6px;
-  font-size: 12.5px;
-  line-height: 16px;
+  padding-top: 5px;
+  font-size: 11px;
+  line-height: 14px;
   color: var(--fg-2);
 }
 /* Зависшие — янтарь этапа подготовки: тот же сигнал, что в списке вещей. */
@@ -319,13 +319,13 @@ function barWidth(avgDays: number): string {
 }
 .card-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 .card-sub {
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: 3.5px 0 0;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 .card-title + .table,
@@ -333,7 +333,7 @@ function barWidth(avgDays: number): string {
 .card-sub + .bars,
 .card-title + .empty-note,
 .card-sub + .empty-note {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 /* --------------------------- Таблицы --------------------------- */
@@ -344,10 +344,10 @@ function barWidth(avgDays: number): string {
 .tr {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 58px 52px 78px;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
-  padding: 9px 0;
-  font-size: 14px;
+  padding: 8px 0;
+  font-size: 12px;
   border-bottom: 1px solid var(--ink-2);
 }
 .table.loc .tr {
@@ -360,7 +360,7 @@ function barWidth(avgDays: number): string {
 /* Шапка таблицы — подпись, а не «эйебрау»: обычный регистр, без разрядки. */
 .tr.th {
   padding-top: 0;
-  font-size: 12.5px;
+  font-size: 11px;
   color: var(--fg-2);
   white-space: nowrap;
 }
@@ -380,8 +380,8 @@ function barWidth(avgDays: number): string {
   overflow-wrap: anywhere;
 }
 .c-meta {
-  font-size: 12px;
-  line-height: 15px;
+  font-size: 10.5px;
+  line-height: 13px;
   color: var(--fg-2);
 }
 .c-n,
@@ -396,14 +396,14 @@ function barWidth(avgDays: number): string {
   white-space: nowrap;
 }
 .note {
-  margin: 12px 0 0;
-  font-size: 12.5px;
+  margin: 10.5px 0 0;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--fg-2);
 }
 .empty-note {
   margin: 0;
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--fg-1);
 }
 
@@ -411,18 +411,18 @@ function barWidth(avgDays: number): string {
 .bars {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .bar-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 7px;
+  gap: 7px;
+  margin-bottom: 6px;
 }
 .bar-label {
   min-width: 0;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -430,14 +430,14 @@ function barWidth(avgDays: number): string {
 }
 .bar-value {
   flex: none;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 /* Полоса тонкая: она сравнивает величины, а не изображает объём. */
 .bar-track {
-  height: 6px;
+  height: 5px;
   border-radius: var(--r-pill);
   background: var(--ink-2);
   overflow: hidden;
@@ -449,8 +449,8 @@ function barWidth(avgDays: number): string {
 }
 .bar-meta {
   display: block;
-  margin-top: 6px;
-  font-size: 12.5px;
+  margin-top: 5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 </style>

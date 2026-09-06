@@ -360,16 +360,16 @@ async function submit(): Promise<void> {
 .head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8.5px;
   padding: calc(var(--safe-top) + 10px) var(--pad) 10px;
   background: var(--ink-0);
 }
 .close {
   flex: none;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
+  width: 35px;
+  height: 35px;
+  min-width: 35px;
+  min-height: 35px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,12 +381,12 @@ async function submit(): Promise<void> {
   background: var(--ink-2);
 }
 .close svg {
-  width: 18px;
-  height: 18px;
+  width: 15.5px;
+  height: 15.5px;
 }
 .title {
   margin: 0;
-  font-size: 18px;
+  font-size: 15.5px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -398,17 +398,17 @@ async function submit(): Promise<void> {
   padding: 4px var(--pad) 0;
 }
 .block {
-  padding: 12px 0 8px;
+  padding: 10.5px 0 7px;
 }
 .block-title {
-  margin: 0 0 12px;
-  font-size: 17px;
+  margin: 0 0 10.5px;
+  font-size: 15px;
   font-weight: 650;
   color: var(--fg-0);
 }
 .note {
-  margin: 10px 0 0;
-  font-size: 12.5px;
+  margin: 8.5px 0 0;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--fg-2);
 }
@@ -416,8 +416,8 @@ async function submit(): Promise<void> {
 /* --- Поля --- */
 .lbl {
   display: block;
-  margin: 14px 0 6px;
-  font-size: 12.5px;
+  margin: 12px 0 5px;
+  font-size: 11px;
   color: var(--fg-2);
 }
 .block-title + .lbl,
@@ -426,13 +426,13 @@ async function submit(): Promise<void> {
 }
 .field {
   width: 100%;
-  height: 50px;
-  padding: 0 14px;
+  height: 43.5px;
+  padding: 0 12px;
   border: none;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-0);
-  font-size: 16px;
+  font-size: 14px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
@@ -445,8 +445,8 @@ async function submit(): Promise<void> {
 }
 .area {
   height: auto;
-  min-height: 104px;
-  padding: 13px 14px;
+  min-height: 90.5px;
+  padding: 11.5px 12px;
   line-height: 1.45;
   resize: vertical;
 }
@@ -458,28 +458,28 @@ async function submit(): Promise<void> {
 
 /* Поле автодополнения — тот же язык, что и у обычных полей. */
 :deep(.ac .field) {
-  height: 50px;
-  padding: 0 14px;
+  height: 43.5px;
+  padding: 0 12px;
   border: none;
   border-radius: var(--r-field);
   background: var(--ink-1);
   color: var(--fg-0);
-  font-size: 16px;
+  font-size: 14px;
 }
 :deep(.ac .field:focus) {
   background: var(--ink-2);
 }
 :deep(.ac-list) {
-  padding: 6px;
+  padding: 5px;
   border: none;
   border-radius: var(--r-field);
   background: var(--ink-2);
   box-shadow: none;
 }
 :deep(.ac-item) {
-  padding: 11px 12px;
+  padding: 9.5px 10.5px;
   border-radius: var(--r-sm);
-  font-size: 15px;
+  font-size: 13px;
 }
 :deep(.ac-item:active) {
   background: var(--ink-3);
@@ -488,15 +488,15 @@ async function submit(): Promise<void> {
 /* --- Переключатель валюты --- */
 .seg {
   display: flex;
-  gap: 8px;
+  gap: 7px;
 }
 .seg-opt {
   flex: 1;
-  height: 44px;
+  height: 38.5px;
   border-radius: var(--r-pill);
   background: var(--ink-1);
   color: var(--fg-1);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 650;
 }
 .seg-opt.sel {
@@ -508,7 +508,7 @@ async function submit(): Promise<void> {
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 8.5px;
 }
 @media (min-width: 440px) {
   .photo-grid {
@@ -518,7 +518,7 @@ async function submit(): Promise<void> {
 .thumb {
   position: relative;
   aspect-ratio: 1;
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--ink-1);
 }
@@ -541,13 +541,13 @@ async function submit(): Promise<void> {
   background: rgba(14, 15, 18, 0.5);
 }
 .err-mark {
-  font-size: 20px;
+  font-size: 17.5px;
   font-weight: 700;
   color: #fff;
 }
 .spinner {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: #fff;
@@ -562,15 +562,15 @@ async function submit(): Promise<void> {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 26px;
-  height: 26px;
+  width: 22.5px;
+  height: 22.5px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--r-pill);
   background: rgba(14, 15, 18, 0.6);
   color: #fff;
-  font-size: 17px;
+  font-size: 15px;
   line-height: 1;
 }
 .add-tile {
@@ -579,9 +579,9 @@ async function submit(): Promise<void> {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--ink-1);
   color: var(--brand);
 }
@@ -589,7 +589,7 @@ async function submit(): Promise<void> {
   background: var(--ink-2);
 }
 .add-label {
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 650;
 }
 .hidden-input {
@@ -598,7 +598,7 @@ async function submit(): Promise<void> {
 
 /* --- Нижняя кнопка --- */
 .scroll-pad {
-  height: 8px;
+  height: 7px;
 }
 .sticky-save {
   padding: 10px var(--pad) calc(var(--safe-bottom) + 12px);
@@ -606,11 +606,11 @@ async function submit(): Promise<void> {
 }
 .save {
   width: 100%;
-  height: 50px;
+  height: 43.5px;
   border-radius: var(--r-field);
   background: var(--brand);
   color: var(--brand-ink);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 650;
 }
 .save:disabled {

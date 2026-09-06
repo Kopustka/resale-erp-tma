@@ -90,7 +90,7 @@ onBeforeUnmount(() => {
 .field {
   width: 100%;
   min-height: var(--tap);
-  padding: 0 12px;
+  padding: 0 10.5px;
   border-radius: var(--radius);
   border: 1px solid var(--tg-theme-secondary-bg-color);
   background: var(--tg-theme-secondary-bg-color);
@@ -106,9 +106,9 @@ onBeforeUnmount(() => {
   right: 0;
   top: calc(100% + 4px);
   margin: 0;
-  padding: 4px;
+  padding: 3.5px;
   list-style: none;
-  max-height: 220px;
+  max-height: 191.5px;
   overflow-y: auto;
   background: var(--tg-theme-bg-color);
   border: 1px solid var(--tg-theme-secondary-bg-color);
@@ -116,9 +116,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 .ac-item {
-  padding: 10px 10px;
+  padding: 8.5px 8.5px;
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  font-size: 13px;
 }
 .ac-item:active {
   background: var(--tg-theme-secondary-bg-color);

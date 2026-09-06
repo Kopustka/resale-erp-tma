@@ -234,14 +234,14 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: 40px 28px;
+  gap: 12px;
+  padding: 35px 24.5px;
   text-align: center;
 }
 .boot-mark {
-  width: 62px;
-  height: 62px;
-  border-radius: 20px;
+  width: 54px;
+  height: 54px;
+  border-radius: 17.5px;
   display: grid;
   place-items: center;
   background: var(--ink-1);
@@ -250,27 +250,27 @@ onMounted(() => {
 }
 .boot-title {
   margin: 0;
-  font-size: 22px;
-  line-height: 27px;
+  font-size: 19px;
+  line-height: 23.5px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 .boot-text {
   margin: 0;
   max-width: 30ch;
-  font-size: 14.5px;
-  line-height: 20px;
+  font-size: 12.5px;
+  line-height: 17.5px;
   color: var(--fg-1);
 }
 .boot-cta {
-  margin-top: 8px;
-  min-width: 180px;
-  height: 50px;
-  padding: 0 22px;
+  margin-top: 7px;
+  min-width: 156.5px;
+  height: 43.5px;
+  padding: 0 19px;
   border-radius: var(--r-field);
   background: var(--brand);
   color: var(--brand-ink);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   display: inline-flex;
   align-items: center;
@@ -278,8 +278,8 @@ onMounted(() => {
   text-decoration: none;
 }
 .boot-spin {
-  width: 26px;
-  height: 26px;
+  width: 22.5px;
+  height: 22.5px;
   border-radius: 50%;
   border: 2.5px solid var(--ink-3);
   border-top-color: var(--brand);

@@ -69,17 +69,17 @@ function confirm(): void {
 
 <style scoped>
 .sub {
-  margin: 0 0 14px;
-  font-size: 14px;
+  margin: 0 0 12px;
+  font-size: 12px;
 }
 .price-field {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 7px;
+  padding: 7px 12px;
   border-radius: var(--radius);
   background: var(--tg-theme-secondary-bg-color);
-  margin-bottom: 18px;
+  margin-bottom: 15.5px;
 }
 .price-input {
   flex: 1;
@@ -87,11 +87,11 @@ function confirm(): void {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 28px;
-  padding: 8px 0;
+  font-size: 24.5px;
+  padding: 7px 0;
 }
 .cur-select {
-  font-size: 18px;
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--tg-theme-text-color);
   background: transparent;
@@ -102,7 +102,7 @@ function confirm(): void {
   width: 100%;
   min-height: var(--tap);
   border-radius: var(--radius);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
 }
 .btn-primary {

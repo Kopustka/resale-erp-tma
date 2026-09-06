@@ -131,9 +131,9 @@ function onStep(e: Event): void {
 <style scoped>
 .card {
   display: flex;
-  gap: 12px;
-  height: 118px;
-  padding: 11px;
+  gap: 10.5px;
+  height: 102px;
+  padding: 9.5px;
   border-radius: var(--r-card);
   background: var(--ink-1);
   user-select: none;
@@ -142,8 +142,8 @@ function onStep(e: Event): void {
 .shot {
   position: relative;
   flex: none;
-  width: 86px;
-  border-radius: 13px;
+  width: 75px;
+  border-radius: 11.5px;
   overflow: hidden;
   background: var(--ink-2);
   pointer-events: none;
@@ -160,7 +160,7 @@ function onStep(e: Event): void {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 4px;
+  height: 3.5px;
   background: var(--s);
 }
 .body {
@@ -173,22 +173,22 @@ function onStep(e: Event): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  height: 18px;
+  gap: 7px;
+  height: 15.5px;
   pointer-events: none;
 }
 .sku {
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 650;
   color: var(--fg-2);
   font-variant-numeric: tabular-nums;
 }
 .chip {
   flex: none;
-  font-size: 10.5px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 3.5px 7px;
   border-radius: var(--r-pill);
   white-space: nowrap;
   /* Надпись отдельным токеном: сам цвет этапа на своей заливке не читается. */
@@ -196,10 +196,10 @@ function onStep(e: Event): void {
   background: color-mix(in srgb, var(--s) 15%, transparent);
 }
 .name {
-  height: 20px;
-  margin: 5px 0 2px;
-  font-size: 16px;
-  line-height: 20px;
+  height: 17.5px;
+  margin: 4.5px 0 2px;
+  font-size: 14px;
+  line-height: 17.5px;
   font-weight: 650;
   letter-spacing: -0.012em;
   white-space: nowrap;
@@ -208,10 +208,10 @@ function onStep(e: Event): void {
   pointer-events: none;
 }
 .sub {
-  height: 16px;
+  height: 14px;
   margin: 0;
-  font-size: 12.5px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
   color: var(--fg-2);
   white-space: nowrap;
   overflow: hidden;
@@ -238,17 +238,17 @@ function onStep(e: Event): void {
 }
 .foot {
   margin-top: auto;
-  height: 30px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8.5px;
 }
 .price {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  font-size: 20px;
+  gap: 5px;
+  font-size: 17.5px;
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -260,7 +260,7 @@ function onStep(e: Event): void {
   color: var(--s-ship);
 }
 .was {
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--fg-2);
   text-decoration: line-through;
@@ -273,13 +273,13 @@ function onStep(e: Event): void {
   max-width: 56%;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 12px;
+  gap: 4.5px;
+  height: 26px;
+  padding: 0 10.5px;
   border-radius: var(--r-pill);
   background: var(--ink-3);
   color: var(--fg-0);
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 650;
   white-space: nowrap;
   overflow: hidden;

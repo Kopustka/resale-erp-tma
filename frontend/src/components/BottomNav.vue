@@ -90,7 +90,7 @@ function onTab(tab: Tab): void {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3.5px;
   color: var(--fg-2);
   transition: color 0.15s ease;
 }
@@ -101,7 +101,7 @@ function onTab(tab: Tab): void {
   display: flex;
 }
 .nav-label {
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 650;
   letter-spacing: -0.005em;
 }
