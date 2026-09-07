@@ -1,11 +1,21 @@
 <script setup lang="ts">
-/** Ввод цены продажи перед переходом в SOLD. */
-import { ref, watch } from 'vue'
+/**
+ * Ввод цены перед переходом дальше по этапам.
+ *
+ * Две роли, отличаются подписью. Перед «Выставлен» спрашиваем цену в
+ * объявлении, перед «Отправлен» — за сколько реально продали. Раньше на
+ * первом случае интерфейс просто ругался «укажите цену», и человек шёл
+ * искать её в карточке; теперь спрашиваем на месте и продолжаем переход.
+ */
+import { computed, ref, watch } from 'vue'
 import BottomSheet from '@/shared/ui/BottomSheet.vue'
 import { CURRENCIES, type Currency, type ItemOut } from '@/shared/api/types'
 import { useSessionStore } from '@/stores/session'
 
-const props = defineProps<{ modelValue: boolean; item: ItemOut | null }>()
+const props = withDefaults(
+  defineProps<{ modelValue: boolean; item: ItemOut | null; mode?: 'sell' | 'list' }>(),
+  { mode: 'sell' },
+)
 const emit = defineEmits<{
   'update:modelValue': [boolean]
   confirm: [number, Currency]
@@ -14,6 +24,17 @@ const emit = defineEmits<{
 const session = useSessionStore()
 const raw = ref('')
 const currency = ref<Currency>('BYN')
+
+const title = computed(() =>
+  props.mode === 'list' ? 'Цена в объявлении' : 'Цена продажи',
+)
+/** Кнопка называет то, что произойдёт, а не состояние. */
+const cta = computed(() => (props.mode === 'list' ? 'Выставить' : 'Продано'))
+const note = computed(() =>
+  props.mode === 'list'
+    ? 'За сколько выставляем вещь'
+    : 'За сколько вещь реально продали',
+)
 
 watch(
   () => props.modelValue,
@@ -43,12 +64,10 @@ function confirm(): void {
 <template>
   <BottomSheet
     :model-value="modelValue"
-    title="Цена продажи"
+    :title="title"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <p class="sub hint" v-if="item">
-      {{ item.sku }} · {{ item.brand }} — отметить как «Продан»
-    </p>
+    <p v-if="item" class="sub hint">{{ item.sku }} · {{ item.brand }} — {{ note }}</p>
     <div class="price-field">
       <input
         v-model="raw"
@@ -62,7 +81,7 @@ function confirm(): void {
       </select>
     </div>
     <button class="btn btn-primary tap" :disabled="parsePrice() === null" @click="confirm">
-      Продано
+      {{ cta }}
     </button>
   </BottomSheet>
 </template>

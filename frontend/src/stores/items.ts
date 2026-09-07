@@ -25,6 +25,20 @@ const chain = new Map<string, Promise<boolean>>()
  */
 const pendingSteps = new Map<string, number>()
 
+/**
+ * Обновляет вещь НА МЕСТЕ, не подменяя объект.
+ *
+ * Это не косметика. Список рисуется виртуальным окном, и оно пересобирается
+ * по прокрутке и изменению размеров, а не на каждую замену элемента массива.
+ * Когда обновление приходило через splice, объект в окне оставался прежним:
+ * данные в сторе уже новые, а карточка показывала старый статус и старую
+ * цену, пока список не тронешь пальцем. Правка того же объекта будит
+ * зависимости самой карточки, и она перерисовывается сразу.
+ */
+function patchInPlace(target: ItemOut, fresh: Partial<ItemOut>): void {
+  Object.assign(target, fresh)
+}
+
 /** Не чаще одной тихой пересинхронизации в 3 секунды. */
 const REFRESH_THROTTLE_MS = 3000
 let lastRefresh = 0
@@ -231,7 +245,7 @@ export const useItemsStore = defineStore('items', {
       if (at === -1) return
       const local = this.items[at]
       const stillPending = (pendingSteps.get(id) ?? 0) > 1
-      this.items.splice(at, 1, {
+      patchInPlace(local, {
         ...fresh,
         status: stillPending ? local.status : fresh.status,
         selling_price: stillPending ? local.selling_price : fresh.selling_price,
@@ -264,7 +278,7 @@ export const useItemsStore = defineStore('items', {
         for (const fresh of page.items) {
           if (pendingSteps.has(fresh.id)) continue
           const at = this.items.findIndex((i) => i.id === fresh.id)
-          if (at !== -1) this.items.splice(at, 1, fresh)
+          if (at !== -1) patchInPlace(this.items[at], fresh)
         }
       } catch {
         /* сеть моргнула — оставляем что было, не мешаем работе */
@@ -275,7 +289,7 @@ export const useItemsStore = defineStore('items', {
       try {
         const fresh = await itemsApi.get(id)
         const at = this.items.findIndex((i) => i.id === id)
-        if (at !== -1) this.items.splice(at, 1, fresh)
+        if (at !== -1) patchInPlace(this.items[at], fresh)
       } catch {
         /* если удалён/недоступен — оставляем как есть */
       }
@@ -293,7 +307,7 @@ export const useItemsStore = defineStore('items', {
     async updateItem(id: string, patch: ItemUpdate): Promise<ItemOut> {
       const fresh = await itemsApi.update(id, patch)
       const at = this.items.findIndex((i) => i.id === id)
-      if (at !== -1) this.items.splice(at, 1, fresh)
+      if (at !== -1) patchInPlace(this.items[at], fresh)
       return fresh
     },
 
@@ -350,7 +364,7 @@ export const useItemsStore = defineStore('items', {
             return // вещь удалили/недоступна — прекращаем
           }
           const at = this.items.findIndex((i) => i.id === id)
-          if (at !== -1) this.items.splice(at, 1, fresh)
+          if (at !== -1) patchInPlace(this.items[at], fresh)
           const titleDone = !needTitle || fresh.title !== baselineTitle
           const descrDone = !needDescr || !!(fresh.description && fresh.description.trim())
           if (titleDone && descrDone) {

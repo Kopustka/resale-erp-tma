@@ -7,6 +7,8 @@ export interface ToastItem {
   actionLabel?: string
   onAction?: () => void
   duration: number
+  /** Сколько раз повторилось одно и то же сообщение. */
+  count: number
 }
 
 interface ShowOptions {
@@ -24,7 +26,22 @@ export const useToastStore = defineStore('toast', {
     toasts: [] as ToastItem[],
   }),
   actions: {
+    /**
+     * Показать сообщение.
+     *
+     * Одинаковые подряд не множим, а считаем. Быстрые нажатия на кнопку
+     * этапа упирались в одну и ту же проверку, и экран заваливало пятью
+     * одинаковыми плашками — прочесть их было невозможно, а закрывать
+     * приходилось каждую.
+     */
     show(opts: ShowOptions): number {
+      const same = this.toasts.find(
+        (t) => t.message === opts.message && t.kind === (opts.kind ?? 'info'),
+      )
+      if (same && !opts.onAction) {
+        same.count += 1
+        return same.id
+      }
       const id = ++seq
       this.toasts.push({
         id,
@@ -33,6 +50,7 @@ export const useToastStore = defineStore('toast', {
         actionLabel: opts.actionLabel,
         onAction: opts.onAction,
         duration: opts.duration ?? 3000,
+        count: 1,
       })
       return id
     },

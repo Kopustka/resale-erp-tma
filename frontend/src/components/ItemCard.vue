@@ -16,7 +16,7 @@
  * InventoryScreen. Поэтому каждая строка внутри тоже имеет заданную высоту,
  * а название обрезается в одну строку вместо переноса.
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ItemOut } from '@/shared/api/types'
 import AuthImage from '@/shared/ui/AuthImage.vue'
 import Money from '@/shared/ui/Money.vue'
@@ -70,6 +70,22 @@ const oldPriceValue = computed<number | null>(() =>
     : null,
 )
 
+/**
+ * Короткая вспышка чипа на каждой смене этапа.
+ *
+ * При быстрых нажатиях подряд статус успевал смениться несколько раз, но
+ * глаз не замечал перехода: текст просто оказывался другим. Вспышка даёт
+ * отклик на каждый шаг — видно, что нажатие засчитано, даже если следующее
+ * пришло через сто миллисекунд.
+ */
+const bump = ref(0)
+watch(
+  () => props.item.status,
+  () => {
+    bump.value += 1
+  },
+)
+
 /** Кнопка лежит внутри кликабельной строки — цели разные, всплытие гасим. */
 function onStep(e: Event): void {
   e.stopPropagation()
@@ -97,7 +113,7 @@ function onStep(e: Event): void {
     <div class="body">
       <div class="head">
         <span class="sku">{{ item.sku }}</span>
-        <span class="chip">{{ statusLabel }}</span>
+        <span :key="bump" class="chip">{{ statusLabel }}</span>
       </div>
 
       <p v-if="generating" class="name gen">Генерирую название…</p>
@@ -183,7 +199,10 @@ function onStep(e: Event): void {
   color: var(--fg-2);
   font-variant-numeric: tabular-nums;
 }
+/* :key меняется на каждом переходе — элемент пересоздаётся, и анимация
+   запускается заново. Без этого при частых нажатиях она бы не повторялась. */
 .chip {
+  animation: chip-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   flex: none;
   font-size: 9px;
   font-weight: 700;
@@ -222,6 +241,12 @@ function onStep(e: Event): void {
   color: var(--brand);
   animation: gen-pulse 1.4s ease-in-out infinite;
 }
+@keyframes chip-in {
+  from {
+    opacity: 0.2;
+    transform: translate3d(0, -3px, 0) scale(0.94);
+  }
+}
 @keyframes gen-pulse {
   0%,
   100% {
@@ -232,7 +257,8 @@ function onStep(e: Event): void {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gen {
+  .gen,
+  .chip {
     animation: none;
   }
 }

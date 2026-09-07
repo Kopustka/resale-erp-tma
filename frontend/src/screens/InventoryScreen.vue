@@ -90,6 +90,7 @@ function resetFilters(): void {
 
 // --------------------------- Смена статуса --------------------------- //
 const priceOpen = ref(false)
+const priceMode = ref<'sell' | 'list'>('sell')
 const priceItem = ref<ItemOut | null>(null)
 
 /**
@@ -103,36 +104,65 @@ function onVisible(): void {
   }
 }
 
+/**
+ * Переход на следующий этап.
+ *
+ * Там, где не хватает цены, спрашиваем её здесь же, а не отказываем. Раньше
+ * попытка выставить вещь без ценника кончалась сообщением «укажите цену», и
+ * человек шёл искать поле в карточке; при быстрых нажатиях таких сообщений
+ * набиралась стопка.
+ */
 async function onNext(item: ItemOut): Promise<void> {
   const target = nextStatus(item.status)
   if (!target) return
-  // Без цены в объявлении в канал не выпускаем — предупреждаем и не двигаем.
-  if (requiresListPrice(target) && (item.list_price === null || item.list_price === undefined)) {
-    hapticNotify('error')
-    toast.error(`${item.brand} ${item.sku}: укажите цену продажи — без неё нельзя выставить`)
-    return
-  }
-  hapticImpact('light')
-  // «Отправлен» = продано: спрашиваем цену, если фактическая не проставлена.
-  if (requiresSellingPrice(target) && (item.selling_price === null || item.selling_price === undefined)) {
+
+  const needList =
+    requiresListPrice(target) && (item.list_price === null || item.list_price === undefined)
+  const needSell =
+    requiresSellingPrice(target) &&
+    (item.selling_price === null || item.selling_price === undefined)
+
+  if (needList || needSell) {
+    hapticImpact('light')
     priceItem.value = item
+    priceMode.value = needList ? 'list' : 'sell'
     priceOpen.value = true
     return
   }
+
+  hapticImpact('light')
   const ok = await items.applyStatus(item, { targetStatus: target })
   if (ok) hapticNotify('success')
 }
 
+/**
+ * Цена введена — доводим переход до конца.
+ *
+ * Для «Выставлен» цену сначала сохраняем в вещь, и только потом двигаем
+ * этап: сервер не выпустит вещь без ценника, и порядок здесь существенен.
+ */
 async function onConfirmPrice(price: number, currency: Currency): Promise<void> {
   const item = priceItem.value
   if (!item) return
-  const ok = await items.applyStatus(item, {
-    targetStatus: 'SHIPPED',
-    sellingPrice: price,
-    sellingCurrency: currency,
-  })
-  if (ok) hapticNotify('success')
-  priceItem.value = null
+  try {
+    if (priceMode.value === 'list') {
+      await items.updateItem(item.id, { list_price: price, price_currency: currency })
+      const ok = await items.applyStatus(item, { targetStatus: 'LISTED' })
+      if (ok) hapticNotify('success')
+    } else {
+      const ok = await items.applyStatus(item, {
+        targetStatus: 'SHIPPED',
+        sellingPrice: price,
+        sellingCurrency: currency,
+      })
+      if (ok) hapticNotify('success')
+    }
+  } catch (e) {
+    hapticNotify('error')
+    toast.error(e instanceof Error ? e.message : 'Не удалось сохранить цену')
+  } finally {
+    priceItem.value = null
+  }
 }
 
 function onOpen(item: ItemOut): void {
@@ -359,7 +389,8 @@ onBeforeUnmount(() => {
       </div>
     </BottomSheet>
 
-    <SellPriceSheet v-model="priceOpen" :item="priceItem" @confirm="onConfirmPrice" />
+    <SellPriceSheet
+      :mode="priceMode" v-model="priceOpen" :item="priceItem" @confirm="onConfirmPrice" />
   </div>
 </template>
 

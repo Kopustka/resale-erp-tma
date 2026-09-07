@@ -50,6 +50,7 @@ onBeforeUnmount(() => {
     <TransitionGroup name="toast">
       <div v-for="t in store.toasts" :key="t.id" class="toast" :class="`toast-${t.kind}`">
         <span class="toast-msg">{{ t.message }}</span>
+        <span v-if="t.count > 1" class="toast-count">{{ t.count }}</span>
         <button v-if="t.actionLabel" class="toast-action" @click="onAction(t.id)">
           {{ t.actionLabel }}
         </button>
@@ -91,6 +92,18 @@ onBeforeUnmount(() => {
 }
 .toast-error {
   border-left-color: var(--tg-theme-destructive-text-color);
+}
+.toast-count {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 .toast-msg {
   flex: 1;
