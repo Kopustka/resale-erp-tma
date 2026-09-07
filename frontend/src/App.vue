@@ -162,24 +162,22 @@ onMounted(() => {
     </div>
 
     <template v-else-if="session.ready">
-      <main class="viewport" :class="{ pushed: overlay?.motion === 'push' }">
-        <InventoryScreen
-          v-show="nav.activeTab === 'inventory'"
-          :class="{ shown: nav.activeTab === 'inventory' }"
-        />
+      <main class="viewport">
         <!--
-          Вкладки монтируем при первом заходе, дальше держим через v-show.
-          Раньше все три монтировались сразу, и настройки с аналитикой на
-          старте тянули шесть лишних запросов до того, как показался склад.
+          Вкладки лежат друг на друге и перекрещиваются прозрачностью, а не
+          подменяются. Раньше здесь был v-show, то есть display: none, — по
+          нему переход не проигрывается вообще, и вкладка возникала резко.
+          Первую вкладку монтируем сразу, остальные — при первом заходе:
+          иначе настройки и аналитика на старте тянули бы лишние запросы до
+          того, как покажется склад.
         -->
+        <InventoryScreen :class="{ shown: nav.activeTab === 'inventory' }" />
         <BiScreen
           v-if="seen.has('bi') && session.canSeeFinance"
-          v-show="nav.activeTab === 'bi'"
           :class="{ shown: nav.activeTab === 'bi' }"
         />
         <SettingsScreen
           v-if="seen.has('settings')"
-          v-show="nav.activeTab === 'settings'"
           :class="{ shown: nav.activeTab === 'settings' }"
         />
       </main>
@@ -187,7 +185,7 @@ onMounted(() => {
       <BottomNav />
     </template>
 
-    <Transition :name="overlay ? `ov-${overlay.motion}` : 'ov-lift'">
+    <Transition name="ov-fade">
       <component :is="overlay.comp" v-if="overlay" />
     </Transition>
 
@@ -203,101 +201,60 @@ onMounted(() => {
   background: var(--tg-theme-bg-color);
 }
 .viewport {
-  height: 100%;
-  padding-bottom: calc(var(--nav-height) + var(--safe-bottom));
-}
-.viewport > * {
+  position: relative;
   height: 100%;
 }
 /*
- * Вкладки переключаются через v-show, то есть display: none. Переход по
- * этому свойству не проигрывается, поэтому берём анимацию: класс снимается
- * при уходе с вкладки и ставится обратно при возврате, а вместе с ним
- * заново запускается и анимация.
- *
- * Движение короткое и почти незаметное: вкладка должна появляться сразу,
- * а не выезжать — иначе интерфейс начинает казаться медленным.
+ * Вкладки лежат стопкой и перекрещиваются прозрачностью: уходящая гаснет,
+ * приходящая проявляется, обе занимают одно место. Скрытая не перехватывает
+ * нажатия — иначе кнопки невидимого экрана ловили бы касания поверх нужного.
  */
-.viewport > .shown {
-  animation: tab-in 170ms cubic-bezier(0.22, 1, 0.36, 1);
+.viewport > * {
+  position: absolute;
+  inset: 0;
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
 }
-@keyframes tab-in {
+.viewport > .shown {
+  opacity: 1;
+  pointer-events: auto;
+  /* Переход работает, когда меняется значение, а при первом заходе вкладка
+     рождается уже видимой — менять нечего, и она возникала рывком. Анимация
+     стартует и от появления элемента, поэтому первый показ тоже плавный. */
+  animation: tab-fade 0.22s ease;
+}
+@keyframes tab-fade {
   from {
     opacity: 0;
-    transform: translate3d(0, 6px, 0);
   }
 }
 
-/* --- Оверлеи ------------------------------------------------------------
-   Анимируем только transform и opacity: их считает композитор, и на слабом
-   телефоне не появляется рывков. Раскладку не трогаем вовсе.
-
-   Кривая — «выброс и торможение»: движение начинается резко и мягко
-   гаснет. Линейная или ease-in-out на таком расстоянии читается как
-   вязкая, будто экран едет по маслу. */
-.ov-lift-enter-active,
-.ov-push-enter-active {
-  transition: transform 0.34s cubic-bezier(0.16, 0.84, 0.24, 1);
-  will-change: transform;
+/* --- Экраны поверх -------------------------------------------------------
+   Затухание, а не выезд. Анимируем только opacity: её считает композитор,
+   раскладку не трогаем вовсе, поэтому на слабом телефоне нет рывков.
+   Появление чуть медленнее исчезновения: приходящий экран должен успеть
+   прочитаться, а уходящий не задерживать. */
+.ov-fade-enter-active {
+  transition: opacity 0.24s ease-out;
 }
-.ov-lift-leave-active,
-.ov-push-leave-active {
-  transition: transform 0.26s cubic-bezier(0.4, 0, 0.6, 1);
-  will-change: transform;
+.ov-fade-leave-active {
+  transition: opacity 0.18s ease-in;
 }
-
-/* Форма приходит снизу и слегка проявляется: она ложится поверх, и полупро-
-   зрачность в начале подсказывает, что нижний экран никуда не делся. */
-.ov-lift-enter-active,
-.ov-lift-leave-active {
-  transition-property: transform, opacity;
-}
-.ov-lift-enter-from,
-.ov-lift-leave-to {
-  transform: translate3d(0, 100%, 0);
-  opacity: 0.7;
-}
-
-/* Переход вглубь приходит от самого края и БЕЗ прозрачности: настоящий
-   экран не просвечивает. Прежняя версия выезжала с 14% и одновременно
-   проявлялась — получалось короткое мутное пятно вместо движения. */
-.ov-push-enter-from,
-.ov-push-leave-to {
-  transform: translate3d(100%, 0, 0);
-}
-/* Тень по левой кромке отделяет въезжающий экран от нижнего. Рисуется один
-   раз и едет вместе со слоем, поэтому ничего не пересчитывается. */
-.ov-push-enter-active,
-.ov-push-leave-active,
-.ov-push-enter-to {
-  box-shadow: -14px 0 28px rgba(0, 0, 0, 0.35);
-}
-
-/* Нижний слой подаётся назад — от этого движение читается как глубина, а
-   не как две несвязанные картинки. Сдвиг небольшой: он лишь намекает. */
-.viewport {
-  transition:
-    transform 0.34s cubic-bezier(0.16, 0.84, 0.24, 1),
-    filter 0.34s ease-out;
-}
-.viewport.pushed {
-  transform: translate3d(-18%, 0, 0);
-  filter: brightness(0.72);
+.ov-fade-enter-from,
+.ov-fade-leave-to {
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .viewport > .shown {
-    animation: none;
-  }
-  .ov-lift-enter-active,
-  .ov-push-enter-active,
-  .ov-lift-leave-active,
-  .ov-push-leave-active,
-  .viewport {
+  .viewport > *,
+  .ov-fade-enter-active,
+  .ov-fade-leave-active {
     transition-duration: 0.01ms;
   }
-  .viewport.pushed {
-    transform: none;
+  .viewport > .shown {
+    animation: none;
   }
 }
 .boot {
