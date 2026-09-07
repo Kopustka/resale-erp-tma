@@ -15,7 +15,11 @@ let timer: number | undefined
 onMounted(() => {
   if (!analytics.summary) void analytics.fetch()
   timer = window.setInterval(() => {
-    if (nav.activeTab === 'bi' && !analytics.loading) void analytics.fetch()
+    // Свёрнутое приложение обновлять незачем: это разряд батареи и трафик
+    // ради экрана, которого никто не видит.
+    if (nav.activeTab === 'bi' && document.visibilityState === 'visible') {
+      void analytics.fetch(true)
+    }
   }, REFRESH_MS)
 })
 
@@ -59,7 +63,7 @@ function barWidth(avgDays: number): string {
         :class="{ busy: analytics.loading }"
         :disabled="analytics.loading"
         aria-label="Обновить"
-        @click="analytics.fetch()"
+        @click="analytics.fetch(true)"
       >
         <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -71,7 +75,7 @@ function barWidth(avgDays: number): string {
     <div v-if="analytics.loading && !summary" class="state hint">Загрузка…</div>
     <div v-else-if="analytics.error" class="state">
       <p class="negative">{{ analytics.error }}</p>
-      <button class="retry" @click="analytics.fetch()">Повторить</button>
+      <button class="retry" @click="analytics.fetch(true)">Повторить</button>
     </div>
 
     <div v-else-if="summary" class="content no-scrollbar">
