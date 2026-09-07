@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import type { Component } from 'vue'
 import { nav } from '@/app/navigation'
 import type { Tab } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
@@ -14,10 +15,41 @@ import SettingsScreen from '@/screens/SettingsScreen.vue'
  * Оверлеи грузим по требованию: их код не нужен на старте, а старт —
  * первое, что видит клиент.
  */
-const CreateScreen = defineAsyncComponent(() => import('@/screens/CreateScreen.vue'))
-const ItemDetail = defineAsyncComponent(() => import('@/screens/ItemDetail.vue'))
-const AdminScreen = defineAsyncComponent(() => import('@/screens/AdminScreen.vue'))
-const FieldsScreen = defineAsyncComponent(() => import('@/screens/FieldsScreen.vue'))
+/**
+ * Загрузчики оверлеев. Держим сам модуль, а не defineAsyncComponent.
+ *
+ * Разница существенная. Отложенный компонент монтируется через промис, то
+ * есть на такт позже переключения состояния — и <Transition> не успевает
+ * поставить начальный кадр: экран возникал сразу на месте, без движения, а
+ * подложка при этом уже ехала. Получались два несинхронных слоя.
+ *
+ * Готовый компонент монтируется в том же такте, и анимация входа
+ * проигрывается целиком. Куски кода при этом остаются отдельными: грузим их
+ * в простое, до первого открытия.
+ */
+const LOADERS = {
+  create: () => import('@/screens/CreateScreen.vue'),
+  detail: () => import('@/screens/ItemDetail.vue'),
+  admin: () => import('@/screens/AdminScreen.vue'),
+  fields: () => import('@/screens/FieldsScreen.vue'),
+} as const
+
+type OverlayKey = keyof typeof LOADERS
+
+const MOTION: Record<OverlayKey, 'lift' | 'push'> = {
+  create: 'lift',
+  detail: 'push',
+  admin: 'push',
+  fields: 'push',
+}
+
+const loaded = shallowRef<Partial<Record<OverlayKey, Component>>>({})
+
+async function warm(key: OverlayKey): Promise<void> {
+  if (loaded.value[key]) return
+  const mod = await LOADERS[key]()
+  loaded.value = { ...loaded.value, [key]: mod.default }
+}
 
 
 const session = useSessionStore()
@@ -29,6 +61,7 @@ const session = useSessionStore()
  * заранее и объясняем словами, куда идти.
  */
 const outsideTelegram = !isInTelegram()
+const botUrl = import.meta.env.VITE_BOT_URL || ''
 
 /**
  * Оверлеи различаются по смыслу, поэтому и движутся по-разному.
@@ -36,21 +69,24 @@ const outsideTelegram = !isInTelegram()
  * Создание вещи — форма поверх текущего экрана: приходит снизу и уходит
  * вниз, как лист бумаги, который положили сверху и убрали.
  *
- * Карточка вещи и админка — переход вглубь: приходят справа и уходят
- * вправо. Так видно, что это не «поверх», а «дальше», и возврат ощущается
+ * Карточка вещи, админка и поля — переход вглубь: приходят справа и уходят
+ * вправо. Так видно, что это «дальше», а не «поверх», и возврат ощущается
  * возвратом, а не закрытием.
  */
-const OVERLAYS = {
-  create: { comp: CreateScreen, motion: 'lift' },
-  detail: { comp: ItemDetail, motion: 'push' },
-  admin: { comp: AdminScreen, motion: 'push' },
-  fields: { comp: FieldsScreen, motion: 'push' },
-} as const
+const overlay = computed(() => {
+  const key = nav.overlay as OverlayKey | null
+  if (!key || !(key in LOADERS)) return null
+  const comp = loaded.value[key]
+  return comp ? { comp, motion: MOTION[key] } : null
+})
 
-const overlay = computed(() =>
-  nav.overlay ? (OVERLAYS[nav.overlay as keyof typeof OVERLAYS] ?? null) : null,
+// Открыли раньше, чем кусок кода догрузился в простое — грузим по месту.
+watch(
+  () => nav.overlay,
+  (key) => {
+    if (key && key in LOADERS) void warm(key as OverlayKey)
+  },
 )
-const botUrl = import.meta.env.VITE_BOT_URL || ''
 
 /**
  * Вкладки, которые пользователь уже открывал. Пока вкладку не трогали,
@@ -72,8 +108,10 @@ watch(
  */
 function prefetchOverlays(): void {
   const load = () => {
-    void import('@/screens/ItemDetail.vue')
-    void import('@/screens/CreateScreen.vue')
+    // Все четыре, а не два. Незагруженный экран открывается без анимации:
+    // он появляется уже на месте, потому что монтируется позже такта, в
+    // котором переход должен был начаться.
+    for (const key of Object.keys(LOADERS) as OverlayKey[]) void warm(key)
   }
   const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => void })
     .requestIdleCallback
@@ -124,7 +162,7 @@ onMounted(() => {
     </div>
 
     <template v-else-if="session.ready">
-      <main class="viewport">
+      <main class="viewport" :class="{ pushed: overlay?.motion === 'push' }">
         <InventoryScreen
           v-show="nav.activeTab === 'inventory'"
           :class="{ shown: nav.activeTab === 'inventory' }"
@@ -191,32 +229,60 @@ onMounted(() => {
 }
 
 /* --- Оверлеи ------------------------------------------------------------
-   Анимируем только transform и opacity: их считает композитор, и на
-   слабом телефоне не появляется рывков. Плоскости внизу не двигаем —
-   их всё равно перекрывает оверлей во весь экран. */
+   Анимируем только transform и opacity: их считает композитор, и на слабом
+   телефоне не появляется рывков. Раскладку не трогаем вовсе.
+
+   Кривая — «выброс и торможение»: движение начинается резко и мягко
+   гаснет. Линейная или ease-in-out на таком расстоянии читается как
+   вязкая, будто экран едет по маслу. */
 .ov-lift-enter-active,
 .ov-push-enter-active {
-  transition:
-    transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.18s ease-out;
+  transition: transform 0.34s cubic-bezier(0.16, 0.84, 0.24, 1);
   will-change: transform;
 }
 .ov-lift-leave-active,
 .ov-push-leave-active {
-  transition:
-    transform 0.22s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.16s ease-in;
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.6, 1);
   will-change: transform;
+}
+
+/* Форма приходит снизу и слегка проявляется: она ложится поверх, и полупро-
+   зрачность в начале подсказывает, что нижний экран никуда не делся. */
+.ov-lift-enter-active,
+.ov-lift-leave-active {
+  transition-property: transform, opacity;
 }
 .ov-lift-enter-from,
 .ov-lift-leave-to {
   transform: translate3d(0, 100%, 0);
-  opacity: 0.6;
+  opacity: 0.7;
 }
+
+/* Переход вглубь приходит от самого края и БЕЗ прозрачности: настоящий
+   экран не просвечивает. Прежняя версия выезжала с 14% и одновременно
+   проявлялась — получалось короткое мутное пятно вместо движения. */
 .ov-push-enter-from,
 .ov-push-leave-to {
-  transform: translate3d(14%, 0, 0);
-  opacity: 0;
+  transform: translate3d(100%, 0, 0);
+}
+/* Тень по левой кромке отделяет въезжающий экран от нижнего. Рисуется один
+   раз и едет вместе со слоем, поэтому ничего не пересчитывается. */
+.ov-push-enter-active,
+.ov-push-leave-active,
+.ov-push-enter-to {
+  box-shadow: -14px 0 28px rgba(0, 0, 0, 0.35);
+}
+
+/* Нижний слой подаётся назад — от этого движение читается как глубина, а
+   не как две несвязанные картинки. Сдвиг небольшой: он лишь намекает. */
+.viewport {
+  transition:
+    transform 0.34s cubic-bezier(0.16, 0.84, 0.24, 1),
+    filter 0.34s ease-out;
+}
+.viewport.pushed {
+  transform: translate3d(-18%, 0, 0);
+  filter: brightness(0.72);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -226,8 +292,12 @@ onMounted(() => {
   .ov-lift-enter-active,
   .ov-push-enter-active,
   .ov-lift-leave-active,
-  .ov-push-leave-active {
+  .ov-push-leave-active,
+  .viewport {
     transition-duration: 0.01ms;
+  }
+  .viewport.pushed {
+    transform: none;
   }
 }
 .boot {
