@@ -44,6 +44,8 @@ class ItemCreate(ItemBase):
     cost_currency: str = "BYN"
     price_currency: str = "BYN"
     photo_file_ids: list[str] = Field(default_factory=list)
+    #: Не указана — проставится днём добавления.
+    purchase_date: datetime | None = None
     #: Значения полей, заведённых магазином (см. StoreField).
     extra: dict[str, str] = Field(default_factory=dict)
 
@@ -201,12 +203,49 @@ class TurnoverPoint(BaseModel):
 
 
 
+class StageStat(BaseModel):
+    """Сколько времени вещи проводят на этапе."""
+
+    status: str
+    avg_days: float
+    max_days: float
+    #: Сколько раз через этап проходили (с учётом откатов назад).
+    passes: int
+    #: Сколько вещей стоит на нём прямо сейчас.
+    now_here: int
+
+
+class GroupStat(BaseModel):
+    """Разрез по бренду или категории."""
+
+    name: str
+    total: int
+    sold: int
+    profit: float
+    #: Наценка к вложенному, %. None — ещё нечего считать.
+    markup: float | None = None
+    avg_days: float | None = None
+    #: Вложено в непроданное по этой группе.
+    frozen: float
+
+
+class MonthPoint(BaseModel):
+    month: str
+    sold: int
+    revenue: float
+    profit: float
+
+
 class AnalyticsSummary(BaseModel):
     stale: StaleBucket
     by_location: list[LocationRoi]
     turnover: list[TurnoverPoint]
     total_profit: float
     active_count: int
+    stages: list[StageStat] = []
+    by_brand: list[GroupStat] = []
+    by_category: list[GroupStat] = []
+    by_month: list[MonthPoint] = []
 
 
 # --------------------------- Склады / команда --------------------------- #

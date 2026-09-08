@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
@@ -314,6 +315,13 @@ async def create_item(
     # категории. Раньше пустое дозаполняла нейросеть по фото — она отложена.
     if not data["title"].strip():
         data["title"] = f"{data['brand']} {data['category']}".strip()[:100]
+
+    # Дату закупки проставляем сами, если её не ввели. Пустое поле не даёт
+    # считать сроки вообще: у одиннадцати вещей склада она не была заполнена
+    # ни разу, и всё, что от неё зависело, молча возвращало пустоту. День
+    # добавления — разумное приближение, а кто купил раньше, поправит руками.
+    if not data.get("purchase_date"):
+        data["purchase_date"] = datetime.now(timezone.utc)
 
     repo = ItemRepository(session)
     sku = await repo.next_sku(member.store_id)

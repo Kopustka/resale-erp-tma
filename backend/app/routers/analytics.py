@@ -42,4 +42,8 @@ async def summary(
         turnover=[TurnoverPoint(**t) for t in turnover],
         total_profit=total,
         active_count=active,
+        stages=await repo.stage_times(store_id),
+        by_brand=await repo.by_group(store_id, "brand"),
+        by_category=await repo.by_group(store_id, "category"),
+        by_month=await repo.by_month(store_id),
     )

@@ -142,3 +142,153 @@ class AnalyticsRepository:
                 )
             )
         ).scalar_one()
+
+    async def stage_times(self, store_id: uuid.UUID) -> list[dict]:
+        """Сколько вещь в среднем проводит на каждом этапе.
+
+        Считаем по истории переходов: время на этапе — это промежуток между
+        записью, которая в него привела, и следующей записью. У вещи, которая
+        стоит на этапе прямо сейчас, следующей записи нет, поэтому берём срок
+        до текущего момента: незакрытое ожидание и есть узкое место, а
+        отбросив его, мы бы отчитались о скорости, которой нет.
+
+        Откаты назад тоже попадают в среднее — и правильно: вернули вещь на
+        доработку, значит она снова заняла время на том этапе.
+        """
+        nxt = func.lead(ItemStatusLog.created_at).over(
+            partition_by=ItemStatusLog.item_id, order_by=ItemStatusLog.created_at
+        )
+        spans = (
+            select(
+                ItemStatusLog.new_status.label("stage"),
+                ItemStatusLog.item_id.label("item_id"),
+                func.coalesce(nxt, func.now()).label("left_at"),
+                ItemStatusLog.created_at.label("entered_at"),
+                nxt.label("raw_next"),
+            )
+            .join(Item, Item.id == ItemStatusLog.item_id)
+            .where(Item.store_id == store_id, Item.archived_at.is_(None))
+            .subquery()
+        )
+        days = func.extract("epoch", spans.c.left_at - spans.c.entered_at) / 86400.0
+        rows = (
+            await self.session.execute(
+                select(
+                    spans.c.stage,
+                    func.avg(days).label("avg_days"),
+                    func.max(days).label("max_days"),
+                    func.count().label("passes"),
+                    func.count().filter(spans.c.raw_next.is_(None)).label("now_here"),
+                ).group_by(spans.c.stage)
+            )
+        ).all()
+        out = []
+        for stage, avg_days, max_days, passes, now_here in rows:
+            out.append(
+                {
+                    "status": stage.value if hasattr(stage, "value") else str(stage),
+                    "avg_days": float(avg_days or 0),
+                    "max_days": float(max_days or 0),
+                    "passes": int(passes or 0),
+                    "now_here": int(now_here or 0),
+                }
+            )
+        # Порядок цепочки, а не алфавит: экран читается сверху вниз как путь вещи.
+        order = [s.value for s in ItemStatus]
+        out.sort(key=lambda r: order.index(r["status"]) if r["status"] in order else 99)
+        return out
+
+    async def by_group(self, store_id: uuid.UUID, field: str) -> list[dict]:
+        """Что приносит деньги: разрез по бренду или категории.
+
+        Наценку считаем только по проданным: у непроданной вещи прибыли нет,
+        и включать её в среднее значит занижать результат тем, что ещё не
+        случилось.
+        """
+        col = Item.brand if field == "brand" else Item.category
+        invested = Item.cost_price + Item.restore_cost + Item.delivery_cost
+        profit = Item.selling_price - invested - Item.platform_fee
+        is_sold = and_(Item.status.in_(SOLD_STATUSES), Item.selling_price.isnot(None))
+        # От закупки, а не от заведения в систему: вещь могли внести спустя
+        # неделю после покупки, и срок «купил → продал» вышел бы короче правды.
+        bought_at = func.coalesce(Item.purchase_date, Item.created_at)
+        sold_days = func.extract("epoch", Item.sold_date - bought_at) / 86400.0
+
+        rows = (
+            await self.session.execute(
+                select(
+                    col.label("name"),
+                    func.count().label("total"),
+                    func.count().filter(is_sold).label("sold"),
+                    func.coalesce(
+                        func.sum(case((is_sold, profit), else_=0)), 0
+                    ).label("profit"),
+                    func.sum(case((is_sold, invested), else_=0)).label("sold_invested"),
+                    func.avg(case((is_sold, sold_days))).label("avg_days"),
+                    func.coalesce(
+                        func.sum(case((~is_sold, invested), else_=0)), 0
+                    ).label("frozen"),
+                )
+                .where(
+                    Item.store_id == store_id,
+                    Item.archived_at.is_(None),
+                    col.isnot(None),
+                    col != "",
+                )
+                .group_by(col)
+                .order_by(func.count().desc())
+                .limit(20)
+            )
+        ).all()
+
+        out = []
+        for name, total, sold, profit_v, sold_invested, avg_days, frozen in rows:
+            inv = float(sold_invested or 0)
+            out.append(
+                {
+                    "name": name,
+                    "total": int(total or 0),
+                    "sold": int(sold or 0),
+                    "profit": float(profit_v or 0),
+                    # Наценка в процентах к вложенному. Без вложений процент
+                    # не определён — отдаём null, а не бесконечность.
+                    "markup": (float(profit_v or 0) / inv * 100) if inv > 0 else None,
+                    "avg_days": float(avg_days) if avg_days is not None else None,
+                    "frozen": float(frozen or 0),
+                }
+            )
+        return out
+
+    async def by_month(self, store_id: uuid.UUID, months: int = 12) -> list[dict]:
+        """Прибыль и выручка по месяцам продажи."""
+        since = datetime.now(timezone.utc) - timedelta(days=31 * months)
+        invested = Item.cost_price + Item.restore_cost + Item.delivery_cost
+        profit = Item.selling_price - invested - Item.platform_fee
+        rows = (
+            await self.session.execute(
+                select(
+                    func.to_char(Item.sold_date, "YYYY-MM").label("month"),
+                    func.count().label("sold"),
+                    func.coalesce(func.sum(Item.selling_price), 0).label("revenue"),
+                    func.coalesce(func.sum(profit), 0).label("profit"),
+                )
+                .where(
+                    Item.store_id == store_id,
+                    Item.status.in_(SOLD_STATUSES),
+                    Item.selling_price.isnot(None),
+                    Item.sold_date.isnot(None),
+                    Item.sold_date >= since,
+                )
+                .group_by("month")
+                .order_by("month")
+            )
+        ).all()
+        return [
+            {
+                "month": m,
+                "sold": int(c or 0),
+                "revenue": float(r or 0),
+                "profit": float(p or 0),
+            }
+            for m, c, r, p in rows
+        ]

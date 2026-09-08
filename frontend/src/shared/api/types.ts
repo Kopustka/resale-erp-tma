@@ -193,12 +193,45 @@ export interface TurnoverPoint {
   sold_count: number
 }
 
+export interface StageStat {
+  status: ItemStatus
+  avg_days: number
+  max_days: number
+  /** Сколько раз проходили этап, с учётом откатов назад. */
+  passes: number
+  /** Сколько вещей стоит на нём прямо сейчас. */
+  now_here: number
+}
+
+export interface GroupStat {
+  name: string
+  total: number
+  sold: number
+  profit: number
+  /** Наценка к вложенному, %. null — ещё нечего считать. */
+  markup: number | null
+  avg_days: number | null
+  /** Вложено в непроданное по этой группе. */
+  frozen: number
+}
+
+export interface MonthPoint {
+  month: string
+  sold: number
+  revenue: number
+  profit: number
+}
+
 export interface AnalyticsSummary {
   stale: StaleBucket
   by_location: LocationRoi[]
   turnover: TurnoverPoint[]
   total_profit: number
   active_count: number
+  stages: StageStat[]
+  by_brand: GroupStat[]
+  by_category: GroupStat[]
+  by_month: MonthPoint[]
 }
 
 export interface StoreOut {

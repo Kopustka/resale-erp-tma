@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAnalyticsStore } from '@/stores/analytics'
 import Money from '@/shared/ui/Money.vue'
 import { formatDays, formatMoney, formatPercent } from '@/shared/utils/format'
@@ -35,6 +35,55 @@ onBeforeUnmount(() => {
 })
 
 const summary = computed(() => analytics.summary)
+
+const STAGE_LABEL: Record<string, string> = {
+  BOUGHT: 'Куплен',
+  PREPARING: 'Подготовка',
+  PHOTOGRAPHED: 'Отснято',
+  LISTED: 'Выставлен',
+  SHIPPED: 'Отправлен',
+}
+const STAGE_VAR: Record<string, string> = {
+  BOUGHT: 'bought',
+  PREPARING: 'prep',
+  PHOTOGRAPHED: 'photo',
+  LISTED: 'listed',
+  SHIPPED: 'ship',
+}
+
+/**
+ * Этапы без «Отправлен»: он конечный, и «сколько вещь пролежала проданной»
+ * ничего не говорит о работе — только о том, давно ли её продали.
+ */
+const stages = computed(() =>
+  (summary.value?.stages ?? []).filter((s) => s.status !== 'SHIPPED'),
+)
+/** Нормировка полос: длина относительно самого долгого этапа. */
+const stageMax = computed(() =>
+  Math.max(1, ...stages.value.map((s) => s.avg_days)),
+)
+/** Самый долгий этап — его и называем узким местом. */
+const bottleneck = computed(() => {
+  const list = stages.value.filter((s) => s.passes > 0)
+  if (!list.length) return null
+  return list.reduce((a, b) => (b.avg_days > a.avg_days ? b : a))
+})
+
+/** Месяцы: нормируем столбцы по наибольшей прибыли. */
+const monthMax = computed(() =>
+  Math.max(1, ...(summary.value?.by_month ?? []).map((m) => Math.abs(m.profit))),
+)
+function monthLabel(m: string): string {
+  const [y, mo] = m.split('-')
+  const names = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+  return `${names[Number(mo) - 1] ?? mo} ${y.slice(2)}`
+}
+
+/** Показываем тот разрез, где вообще есть что показать. */
+const groupTab = ref<'category' | 'brand'>('category')
+const groups = computed(() =>
+  groupTab.value === 'brand' ? (summary.value?.by_brand ?? []) : (summary.value?.by_category ?? []),
+)
 
 // Максимум для нормировки SVG-баров оборачиваемости.
 const maxAvgDays = computed(() => {
@@ -109,6 +158,97 @@ function barWidth(avgDays: number): string {
           </svg>
         </button>
       </div>
+
+      <!-- Прибыль по месяцам -->
+      <section class="card">
+        <h2 class="card-title">Прибыль по месяцам</h2>
+        <div v-if="summary.by_month.length" class="months">
+          <div v-for="m in summary.by_month" :key="m.month" class="mo">
+            <span class="mo-val num">{{ formatMoney(m.profit) }}</span>
+            <span
+              class="mo-bar"
+              :class="{ neg: m.profit < 0 }"
+              :style="{ height: Math.max(4, (Math.abs(m.profit) / monthMax) * 74) + 'px' }"
+            />
+            <span class="mo-name">{{ monthLabel(m.month) }}</span>
+            <span class="mo-cnt">{{ m.sold }} шт</span>
+          </div>
+        </div>
+        <p v-else class="empty-note">
+          Появится после первой продажи: считаем по месяцу отправки.
+        </p>
+      </section>
+
+      <!-- Что приносит деньги -->
+      <section class="card">
+        <div class="card-head">
+          <h2 class="card-title">Что приносит деньги</h2>
+          <div class="seg">
+            <button :class="{ on: groupTab === 'category' }" @click="groupTab = 'category'">
+              Категории
+            </button>
+            <button :class="{ on: groupTab === 'brand' }" @click="groupTab = 'brand'">
+              Бренды
+            </button>
+          </div>
+        </div>
+        <div v-if="groups.length" class="table grp">
+          <div class="tr th">
+            <span>{{ groupTab === 'brand' ? 'Бренд' : 'Категория' }}</span>
+            <span class="c-num">Продано</span>
+            <span class="c-num">Наценка</span>
+            <span class="c-num">Прибыль</span>
+          </div>
+          <div v-for="g in groups" :key="g.name" class="tr">
+            <span class="c-name">
+              <span class="g-name">{{ g.name }}</span>
+              <span class="g-meta">
+                <template v-if="g.avg_days !== null">{{ formatDays(g.avg_days) }} до продажи</template>
+                <template v-else-if="g.frozen > 0">заморожено {{ formatMoney(g.frozen) }}</template>
+                <template v-else>—</template>
+              </span>
+            </span>
+            <span class="c-num num">{{ g.sold }}/{{ g.total }}</span>
+            <span class="c-num num">{{ g.markup === null ? '—' : formatPercent(g.markup) }}</span>
+            <span class="c-num num-strong" :class="g.profit > 0 ? 'positive' : ''">
+              {{ formatMoney(g.profit) }}
+            </span>
+          </div>
+        </div>
+        <p v-else class="empty-note">Заполните бренд и категорию у вещей.</p>
+      </section>
+
+      <!-- Где вещи застревают -->
+      <section class="card">
+        <h2 class="card-title">Где вещи застревают</h2>
+        <p v-if="bottleneck" class="card-sub">
+          Дольше всего вещь ждёт на этапе «{{ STAGE_LABEL[bottleneck.status] }}» —
+          в среднем {{ formatDays(bottleneck.avg_days) }}
+        </p>
+        <div v-if="stages.length" class="stages">
+          <div v-for="st in stages" :key="st.status" class="stage">
+            <div class="stage-top">
+              <span class="stage-name">{{ STAGE_LABEL[st.status] || st.status }}</span>
+              <span class="stage-days num">{{ formatDays(st.avg_days) }}</span>
+            </div>
+            <div class="stage-track">
+              <span
+                class="stage-fill"
+                :style="{
+                  width: Math.max(3, (st.avg_days / stageMax) * 100) + '%',
+                  background: `var(--s-${STAGE_VAR[st.status]})`,
+                }"
+              />
+            </div>
+            <div class="stage-foot">
+              <span v-if="st.now_here">сейчас там {{ st.now_here }}</span>
+              <span v-else>сейчас пусто</span>
+              <span>дольше всего {{ formatDays(st.max_days) }}</span>
+            </div>
+          </div>
+        </div>
+        <p v-else class="empty-note">Данных о переходах пока нет.</p>
+      </section>
 
       <!-- Окупаемость по точкам -->
       <section class="card">
@@ -403,6 +543,151 @@ function barWidth(avgDays: number): string {
   display: block;
   margin-top: 5px;
   font-size: 11px;
+  color: var(--fg-2);
+}
+
+/* --- Прибыль по месяцам ------------------------------------------------- */
+.months {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 6px;
+  overflow-x: auto;
+  padding-top: 4px;
+  scrollbar-width: none;
+}
+.months::-webkit-scrollbar {
+  display: none;
+}
+/* Не растягиваем: при одном месяце столбец занимал бы всю ширину и читался
+   как заливка, а не как график. Растём только до разумной ширины. */
+.mo {
+  flex: 0 1 46px;
+  min-width: 44px;
+  max-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.mo-val {
+  font-size: 10px;
+  color: var(--fg-1);
+  white-space: nowrap;
+}
+/* Столбец растёт снизу: так ряд читается как график, а не как набор плиток. */
+.mo-bar {
+  width: 100%;
+  border-radius: 5px 5px 2px 2px;
+  background: var(--s-ship);
+}
+.mo-bar.neg {
+  background: var(--danger);
+}
+.mo-name {
+  font-size: 10.5px;
+  color: var(--fg-1);
+}
+.mo-cnt {
+  font-size: 9.5px;
+  color: var(--fg-2);
+}
+
+/* --- Что приносит деньги ------------------------------------------------- */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.card-head .card-title {
+  margin: 0;
+}
+.seg {
+  display: flex;
+  gap: 3px;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--ink-2);
+}
+.seg button {
+  padding: 4px 9px;
+  border-radius: var(--r-pill);
+  color: var(--fg-1);
+  font-size: 11px;
+  font-weight: 650;
+}
+.seg button.on {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+.table.grp .tr {
+  grid-template-columns: minmax(0, 1fr) 48px 52px 72px;
+}
+.c-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.g-name {
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.g-meta {
+  font-size: 10.5px;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Где вещи застревают ------------------------------------------------- */
+.card-sub {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--fg-1);
+}
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stage-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stage-name {
+  font-size: 13px;
+  font-weight: 650;
+}
+.stage-days {
+  font-size: 13px;
+  font-weight: 700;
+}
+.stage-track {
+  height: 5px;
+  margin: 5px 0 4px;
+  border-radius: 3px;
+  background: var(--ink-2);
+  overflow: hidden;
+}
+.stage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.stage-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
   color: var(--fg-2);
 }
 </style>
