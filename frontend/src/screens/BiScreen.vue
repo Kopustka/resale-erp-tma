@@ -110,38 +110,6 @@ function barWidth(avgDays: number): string {
         </button>
       </div>
 
-      <!-- Эффективность каналов -->
-      <section v-if="summary.by_channel.length" class="card">
-        <h2 class="card-title">Каналы</h2>
-        <div class="table">
-          <div class="tr th">
-            <span>Канал</span>
-            <span class="c-n">Выложено</span>
-            <span class="c-n">Продано</span>
-            <span class="c-n">Прибыль</span>
-          </div>
-          <div v-for="ch in summary.by_channel" :key="ch.channel_id" class="tr" :class="{ off: !ch.enabled }">
-            <span class="c-ch">
-              <span class="ch-name">{{ ch.title || ch.chat_id }}</span>
-              <span v-if="ch.sell_through !== null" class="c-meta">
-                конверсия {{ Math.round(ch.sell_through) }}%<template v-if="ch.avg_days !== null">
-                  · {{ Math.round(ch.avg_days) }} дн.</template><template v-if="ch.reactions">
-                  · {{ ch.reactions }} реакц.</template>
-              </span>
-            </span>
-            <span class="c-n num">{{ ch.posted }}</span>
-            <span class="c-n num">{{ ch.sold }}</span>
-            <span class="c-n"><Money :value="ch.profit" signed /></span>
-          </div>
-        </div>
-        <p class="note">
-          Вещь может висеть в нескольких каналах сразу, и определить, который
-          привёл покупателя, по данным нельзя. Продажа засчитывается каждому —
-          поэтому сумма по каналам может превышать общую прибыль. Это сравнение
-          каналов между собой, а не разбиение выручки.
-        </p>
-      </section>
-
       <!-- Окупаемость по точкам -->
       <section class="card">
         <h2 class="card-title">Окупаемость по точкам закупки</h2>
@@ -367,26 +335,6 @@ function barWidth(avgDays: number): string {
   font-size: 11px;
   color: var(--fg-2);
   white-space: nowrap;
-}
-.tr.off {
-  opacity: 0.5;
-}
-.c-ch {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.ch-name {
-  font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  overflow-wrap: anywhere;
-}
-.c-meta {
-  font-size: 10.5px;
-  line-height: 13px;
-  color: var(--fg-2);
 }
 .c-n,
 .c-num {

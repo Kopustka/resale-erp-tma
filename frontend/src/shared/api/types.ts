@@ -193,23 +193,9 @@ export interface TurnoverPoint {
   sold_count: number
 }
 
-export interface ChannelStat {
-  channel_id: string
-  chat_id: string
-  title: string | null
-  enabled: boolean
-  posted: number
-  sold: number
-  sell_through: number | null
-  avg_days: number | null
-  profit: number
-  reactions: number
-}
-
 export interface AnalyticsSummary {
   stale: StaleBucket
   by_location: LocationRoi[]
-  by_channel: ChannelStat[]
   turnover: TurnoverPoint[]
   total_profit: number
   active_count: number

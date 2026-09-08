@@ -200,23 +200,10 @@ class TurnoverPoint(BaseModel):
     sold_count: int
 
 
-class ChannelStat(BaseModel):
-    channel_id: uuid.UUID
-    chat_id: str
-    title: str | None = None
-    enabled: bool
-    posted: int
-    sold: int
-    sell_through: float | None = None
-    avg_days: float | None = None
-    profit: Decimal
-    reactions: int = 0
-
 
 class AnalyticsSummary(BaseModel):
     stale: StaleBucket
     by_location: list[LocationRoi]
-    by_channel: list[ChannelStat] = []
     turnover: list[TurnoverPoint]
     total_profit: float
     active_count: int
