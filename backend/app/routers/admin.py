@@ -16,7 +16,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import false as sa_false
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user
@@ -176,10 +177,31 @@ async def activity(
         )
         if user_id is not None:
             q = q.where(AuditLog.user_id == user_id)
+        if group is not None:
+            # Отсев именно в SQL. Отбрасывать группы после LIMIT нельзя:
+            # выборка берёт свежайшие записи независимо от группы, и вечер,
+            # проведённый в настройках, выдавливал из ответа все события по
+            # вещам — фильтр показывал пустоту вместо сотен записей.
+            prefixes = audit.prefixes_of(group)
+            if not prefixes:
+                q = q.where(sa_false())
+            else:
+                cond = or_(*(AuditLog.action.startswith(f"{p}.") for p in prefixes))
+                if group == "items":
+                    # Неизвестный префикс тоже считается «вещами» — так же,
+                    # как в group_of, иначе новая запись пропадёт из ленты.
+                    cond = or_(
+                        cond,
+                        ~or_(
+                            *(
+                                AuditLog.action.startswith(f"{p}.")
+                                for p in audit.ALL_PREFIXES
+                            )
+                        ),
+                    )
+                q = q.where(cond)
         for row in (await session.execute(q)).scalars():
             g = audit.group_of(row.action)
-            if group is not None and g != group:
-                continue
             icon, title = audit.label_of(row.action)
             events.append(
                 ActivityEvent(
@@ -439,11 +461,12 @@ async def request_oversight(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Подключить чужой склад к своей панели.
+    """Попросить доступ к ленте чужого склада.
 
-    Если человек уже знаком боту и владеет складом — подключается сразу.
-    Иначе запись ждёт в PENDING и привяжется при его первом /start: до
-    этого момента склада, который можно показать, попросту не существует.
+    Запись создаётся в PENDING и ждёт кнопки «Разрешить» в боте. Сразу
+    подключать нельзя: сюда приходит любой юзернейм, и без согласия
+    владельца это был бы способ читать чужой склад, зная только ник.
+    Если человек ещё не открывал бота, запрос дождётся его первого /start.
     """
     uname = payload.username.lstrip("@").strip().lower()
     if not uname:
@@ -473,14 +496,13 @@ async def request_oversight(
     req = StoreOversight(watcher_id=user.id, target_username=uname)
     session.add(req)
     await session.flush()
-
-    target = (
-        await session.execute(select(User).where(User.username == uname))
-    ).scalar_one_or_none()
-    store = await ov.bind(session, req, target) if target is not None else None
     await session.commit()
     await session.refresh(req)
-    return _ov_out(req, store.name if store is not None else None)
+
+    # Спрашиваем после коммита: если Telegram не ответит, запрос всё равно
+    # сохранён и уйдёт адресату при его следующем /start.
+    await ov.deliver(session, req)
+    return _ov_out(req, None)
 
 
 @router.delete("/oversight/{req_id}", status_code=204)

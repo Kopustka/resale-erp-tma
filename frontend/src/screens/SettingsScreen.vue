@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { openAdmin, openFields } from '@/app/navigation'
 import { useSessionStore } from '@/stores/session'
 import { useItemsStore } from '@/stores/items'
 import { useAnalyticsStore } from '@/stores/analytics'
 import { useToastStore } from '@/stores/toast'
-import { CURRENCIES, CURRENCY_SYMBOLS, type Currency, type Role } from '@/shared/api/types'
+import {
+  CURRENCIES,
+  CURRENCY_SYMBOLS,
+  type Currency,
+  type MemberOut,
+  type Role,
+} from '@/shared/api/types'
 import { storesApi } from '@/shared/api/endpoints'
-import { hapticSelection } from '@/shared/telegram/webapp'
+import { hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
 const items = useItemsStore()
@@ -57,11 +63,61 @@ async function changeBaseCurrency(cur: Currency): Promise<void> {
 }
 
 // --- Автопостинг в канал ---
+const removingId = ref<string | null>(null)
+
+function loadTeam(): void {
+  void session.fetchMembers()
+}
+
+/** Кого спросили «точно?» — подтверждение вторым нажатием, как в карточке. */
+const confirmId = ref<string | null>(null)
+let confirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function nameOf(m: MemberOut): string {
+  return m.username ? `@${m.username}` : m.first_name || 'участник'
+}
+
+/**
+ * Исключить участника. Первое нажатие спрашивает, второе исключает:
+ * человек на той стороне теряет доступ к складу сразу, и промах пальцем
+ * не должен этого делать.
+ */
+async function removeMember(m: MemberOut): Promise<void> {
+  if (confirmId.value !== m.user_id) {
+    confirmId.value = m.user_id
+    if (confirmTimer) clearTimeout(confirmTimer)
+    confirmTimer = setTimeout(() => (confirmId.value = null), 4000)
+    return
+  }
+  if (confirmTimer) clearTimeout(confirmTimer)
+  confirmId.value = null
+  removingId.value = m.user_id
+  try {
+    await session.removeMember(m.user_id)
+    hapticNotify('success')
+    toast.success(`${nameOf(m)} исключён из склада`)
+  } catch (e) {
+    hapticNotify('error')
+    toast.error(e instanceof Error ? e.message : 'Не удалось исключить')
+  } finally {
+    removingId.value = null
+  }
+}
+
+onBeforeUnmount(() => {
+  if (confirmTimer) clearTimeout(confirmTimer)
+})
+
 onMounted(() => {
   baseCurrency.value = session.baseCurrency
   if (session.isOwner) {
-    void session.fetchMembers()
-    void storesApi.getSettings().then((s) => (baseCurrency.value = s.base_currency))
+    loadTeam()
+    // Ошибку ловим: без .catch раздел молча оставался с валютой по
+    // умолчанию, и человек видел не ту, что на сервере.
+    storesApi
+      .getSettings()
+      .then((s) => (baseCurrency.value = s.base_currency))
+      .catch(() => toast.error('Не удалось прочитать настройки склада'))
   }
 })
 
@@ -184,6 +240,10 @@ function exportCsv(): void {
         </button>
 
         <div v-if="session.membersLoading" class="loading">Загрузка участников…</div>
+        <div v-else-if="session.membersError" class="members-error">
+          <span>{{ session.membersError }}</span>
+          <button class="retry tap" @click="loadTeam">Повторить</button>
+        </div>
         <div v-else class="members">
           <div v-for="m in session.members" :key="m.user_id" class="member">
             <div class="m-info">
@@ -191,6 +251,15 @@ function exportCsv(): void {
               <span v-if="m.username" class="m-uname">@{{ m.username }}</span>
             </div>
             <span class="m-role">{{ ROLE_LABELS[m.role] }}</span>
+            <button
+              v-if="m.role !== 'OWNER'"
+              class="revoke"
+              :disabled="removingId === m.user_id"
+              :aria-label="`Исключить ${nameOf(m)} из склада`"
+              @click="removeMember(m)"
+            >
+              {{ confirmId === m.user_id ? 'Точно?' : 'Исключить' }}
+            </button>
           </div>
         </div>
 
@@ -587,5 +656,23 @@ function exportCsv(): void {
 }
 .bottom-pad {
   height: 14px;
+}
+.members-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  color: var(--fg-1);
+  font-size: 13px;
+}
+.retry {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 1px solid var(--ink-3);
+  border-radius: var(--r-field);
+  background: var(--ink-2);
+  color: var(--fg-0);
+  font-size: 13px;
 }
 </style>

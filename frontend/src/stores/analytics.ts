@@ -31,7 +31,13 @@ export const useAnalyticsStore = defineStore('analytics', {
   actions: {
     /** force — обновить, даже если только что обновляли (кнопка «Обновить»). */
     async fetch(force = false): Promise<void> {
-      if (inFlight) return inFlight
+      // При force дожидаемся текущего запроса и делаем свой. Иначе нажатие
+      // «Обновить» в момент фонового опроса не делало ничего: кнопка
+      // моргала заблокированной, а данные оставались прежними.
+      if (inFlight) {
+        if (!force) return inFlight
+        await inFlight.catch(() => {})
+      }
       const now = Date.now()
       if (!force && this.summary !== null && now - lastAt < MIN_GAP_MS) return
 

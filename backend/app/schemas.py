@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .models import ItemStatus, Role
@@ -28,10 +30,26 @@ class ItemBase(BaseModel):
     length_cm: Decimal | None = None
     width_cm: Decimal | None = None
     sleeve_cm: Decimal | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=4000)
     purchase_location: str | None = Field(None, max_length=120)
     sales_platform: str | None = Field(None, max_length=40)
     ad_url: str | None = Field(None, max_length=300)
+
+
+#: Валюты, для которых у нас есть курс Нацбанка. Всё прочее раньше
+#: конвертировалось по курсу 1:1 и тихо искажало себестоимость.
+Currency = Literal["BYN", "RUB", "USD", "EUR"]
+
+#: Свои поля магазина. Ключей не больше, чем полей в форме, значения
+#: ограничены по длине — иначе одним запросом можно было залить в JSONB
+#: сколько угодно текста.
+ExtraValues = Annotated[
+    dict[
+        Annotated[str, Field(max_length=64)],
+        Annotated[str, Field(max_length=2000)],
+    ],
+    Field(max_length=64),
+]
 
 
 class ItemCreate(ItemBase):
@@ -41,13 +59,15 @@ class ItemCreate(ItemBase):
     restore_cost: Decimal = Decimal(0)
     delivery_cost: Decimal = Decimal(0)
     list_price: Decimal | None = None  # цена (ассортимента), в price_currency
-    cost_currency: str = "BYN"
-    price_currency: str = "BYN"
-    photo_file_ids: list[str] = Field(default_factory=list)
+    cost_currency: Currency = "BYN"
+    price_currency: Currency = "BYN"
+    # Предела не было вовсе: один запрос мог привязать к вещи сколько угодно
+    # снимков и раздуть и выдачу списка, и папку с файлами.
+    photo_file_ids: list[str] = Field(default_factory=list, max_length=12)
     #: Не указана — проставится днём добавления.
     purchase_date: datetime | None = None
     #: Значения полей, заведённых магазином (см. StoreField).
-    extra: dict[str, str] = Field(default_factory=dict)
+    extra: ExtraValues = Field(default_factory=dict)
 
 
 class ItemUpdate(BaseModel):
@@ -62,7 +82,7 @@ class ItemUpdate(BaseModel):
     length_cm: Decimal | None = None
     width_cm: Decimal | None = None
     sleeve_cm: Decimal | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=4000)
     purchase_location: str | None = Field(None, max_length=120)
     cost_price: Decimal | None = None
     restore_cost: Decimal | None = None
@@ -70,11 +90,17 @@ class ItemUpdate(BaseModel):
     platform_fee: Decimal | None = None
     selling_price: Decimal | None = None
     list_price: Decimal | None = None
-    cost_currency: str | None = Field(None, max_length=3)
-    price_currency: str | None = Field(None, max_length=3)
+    cost_currency: Currency | None = None
+    price_currency: Currency | None = None
     sales_platform: str | None = Field(None, max_length=40)
     ad_url: str | None = Field(None, max_length=300)
-    extra: dict[str, str] | None = None
+    #: Дату закупки можно поправить: вещь могли купить задолго до того,
+    #: как её завели в приложении.
+    purchase_date: datetime | None = None
+    extra: ExtraValues | None = None
+    #: Версия карточки на момент открытия формы — защита от затирания
+    #: чужой правки. Не прислали — проверка не делается.
+    version: int | None = None
 
 
 class ItemOut(BaseModel):
@@ -96,7 +122,7 @@ class ItemOut(BaseModel):
     description: str | None
     photo_count: int = 0
     #: Значения своих полей склада.
-    extra: dict[str, str] = Field(default_factory=dict)
+    extra: ExtraValues = Field(default_factory=dict)
     status: ItemStatus
     version: int
     listed_date: datetime | None
@@ -110,8 +136,8 @@ class ItemOut(BaseModel):
     platform_fee: float | None = None
     selling_price: float | None = None
     list_price: float | None = None
-    cost_currency: str = "BYN"
-    price_currency: str = "BYN"
+    cost_currency: Currency = "BYN"
+    price_currency: Currency = "BYN"
     # значения в базовой валюте склада (для карточек и прибыли)
     cost_price_base: float | None = None
     selling_price_base: float | None = None
@@ -240,7 +266,9 @@ class AnalyticsSummary(BaseModel):
     stale: StaleBucket
     by_location: list[LocationRoi]
     turnover: list[TurnoverPoint]
-    total_profit: float
+    #: None — роль не видит финансы. Ноль означал бы «прибыли нет», а это
+    #: другое утверждение.
+    total_profit: float | None = None
     active_count: int
     stages: list[StageStat] = []
     by_brand: list[GroupStat] = []

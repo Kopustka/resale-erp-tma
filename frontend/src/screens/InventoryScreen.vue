@@ -19,6 +19,16 @@ import { hapticImpact, hapticNotify, hapticSelection } from '@/shared/telegram/w
 import { consumeDrilldown, nav, openCreate, openDetail } from '@/app/navigation'
 
 const items = useItemsStore()
+
+/** Список пуст из-за фильтра или поиска, а не потому, что склада нет. */
+const filtered = computed(
+  () => items.activeFilterCount > 0 || !!items.filters.search,
+)
+
+async function clearFilters(): Promise<void> {
+  await items.resetFilters()
+}
+
 const toast = useToastStore()
 const analytics = useAnalyticsStore()
 
@@ -238,7 +248,7 @@ onBeforeUnmount(() => {
           {{ CURRENCY_SYMBOLS[fx.display] }}
         </button>
         <button
-          class="icon-btn"
+          class="icon-btn hit"
           :class="{ on: items.viewArchived }"
           :aria-label="items.viewArchived ? 'Показать активные' : 'Показать архив'"
           @click="toggleArchive"
@@ -276,7 +286,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <button
-          class="icon-btn filter"
+          class="icon-btn filter hit"
           :class="{ on: items.activeFilterCount > 0 }"
           aria-label="Фильтры"
           @click="filterOpen = true"
@@ -320,6 +330,10 @@ onBeforeUnmount(() => {
     <div v-else-if="error" class="state">
       <p class="negative">{{ error }}</p>
       <button class="retry" @click="items.loadFirst()">Повторить</button>
+    </div>
+    <div v-else-if="isEmpty && filtered" class="state hint">
+      <p>Под фильтры ничего не подошло.</p>
+      <button class="retry" @click="clearFilters">Сбросить фильтры</button>
     </div>
     <div v-else-if="isEmpty" class="state hint">
       {{ items.viewArchived ? 'Архив пуст.' : 'Пусто. Добавьте первый товар кнопкой «+».' }}

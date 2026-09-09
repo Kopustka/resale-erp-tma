@@ -5,7 +5,8 @@
 там StringDataRightTruncation — наружу уходит 500 без всякой подсказки.
 Именно так ломалось добавление вещи с состоянием, написанным словом.
 """
-import asyncio, sys
+import asyncio
+import typing, sys
 from decimal import Decimal
 
 from pydantic import ValidationError
@@ -29,14 +30,29 @@ def chk(c, n, e=""):
 
 
 def limit_of(model, field: str):
-    """Предел длины, объявленный в схеме pydantic."""
+    """Предел длины, объявленный в схеме pydantic.
+
+    Поле, ограниченное перечислением (Literal), тоже имеет предел — длину
+    самого длинного разрешённого значения. Такое ограничение строже
+    max_length, и считать его отсутствующим было бы неверно.
+    """
     f = model.model_fields.get(field)
     if f is None:
         return None
     for meta in f.metadata:
         if hasattr(meta, "max_length"):
             return meta.max_length
-    return None
+
+    literals = [
+        a
+        for arg in (typing.get_args(f.annotation) or (f.annotation,))
+        for a in ((arg,) if typing.get_origin(arg) is not typing.Literal
+                  else typing.get_args(arg))
+        if isinstance(a, str)
+    ]
+    if typing.get_origin(f.annotation) is typing.Literal:
+        literals = [a for a in typing.get_args(f.annotation) if isinstance(a, str)]
+    return max((len(a) for a in literals), default=None)
 
 
 async def main():

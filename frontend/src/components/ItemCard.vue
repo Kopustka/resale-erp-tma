@@ -129,7 +129,7 @@ function onStep(e: Event): void {
 
         <button
           v-if="showStep"
-          class="step"
+          class="step hit"
           :aria-label="`Перевести из «${statusLabel}» в «${nextLabel}»`"
           @click="onStep"
         >

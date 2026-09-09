@@ -79,7 +79,3 @@ export function fractionDigits(value: number, code: Currency): number {
   if (abs >= 1000) return 0
   return abs >= 100 ? 1 : 2
 }
-
-export function displaySymbol(): string {
-  return CURRENCY_SYMBOLS[fx.display]
-}

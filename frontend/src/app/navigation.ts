@@ -41,6 +41,10 @@ export function openCreate(): void {
 }
 
 export function openDetail(itemId: string): void {
+  if (forgetTimer) {
+    clearTimeout(forgetTimer)
+    forgetTimer = null
+  }
   state.detailItemId = itemId
   state.overlay = 'detail'
 }
@@ -55,9 +59,26 @@ export function openFields(): void {
   state.overlay = 'fields'
 }
 
+/**
+ * Длительность ухода оверлея — та же, что в .ov-fade-leave-active
+ * (App.vue). Держим числом здесь, потому что от неё зависит момент,
+ * когда можно забыть, какую вещь показывали.
+ */
+const LEAVE_MS = 180
+
+let forgetTimer: ReturnType<typeof setTimeout> | null = null
+
 export function closeOverlay(): void {
   state.overlay = null
-  state.detailItemId = null
+  // detailItemId обнуляем не сразу. Карточка рисуется под v-if="item", а
+  // item ищется по этому идентификатору: сбросив его вместе с оверлеем, мы
+  // отдавали анимации ухода пустой экран — вместо затухания карточка
+  // пропадала рывком.
+  if (forgetTimer) clearTimeout(forgetTimer)
+  forgetTimer = setTimeout(() => {
+    if (state.overlay === null) state.detailItemId = null
+    forgetTimer = null
+  }, LEAVE_MS)
 }
 
 /** Переход из BI на Склад с преднастроенным фильтром (drill-down). */

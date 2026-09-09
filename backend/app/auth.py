@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
@@ -104,16 +105,26 @@ async def get_current_user(
             language_code=tg_user.get("language_code"),
         )
         session.add(user)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            # Два первых запроса от одного человека пришли одновременно —
+            # обычное дело, когда мини-апп открывают из бота двойным тапом.
+            # Проигравший просто перечитывает то, что успел создать первый.
+            await session.rollback()
+            return (
+                await session.execute(select(User).where(User.telegram_id == tg_id))
+            ).scalar_one()
         await _accept_pending_invites(session, user)
+        await session.commit()
     else:
         # Юзернейм мог смениться — обновляем и добираем возможные новые инвайты
         new_username = tg_user.get("username")
         if new_username and new_username != user.username:
             user.username = new_username
             await _accept_pending_invites(session, user)
+            await session.commit()
 
-    await session.commit()
     await session.refresh(user)
     return user
 

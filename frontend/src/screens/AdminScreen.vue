@@ -157,7 +157,13 @@ async function loadWatchList(): Promise<void> {
   }
 }
 
+// Счётчик запросов ленты. Фильтры переключают быстро — «7 дней», «30»,
+// «всё время» подряд, — и без него в ленту записывался тот ответ, который
+// пришёл последним, а не тот, что соответствует выбранному чипу.
+let feedSeq = 0
+
 async function loadFeed(): Promise<void> {
+  const seq = ++feedSeq
   feedLoading.value = true
   feedError.value = null
   try {
@@ -169,17 +175,20 @@ async function loadFeed(): Promise<void> {
       limit: PAGE,
       offset: 0,
     })
+    if (seq !== feedSeq) return
     events.value = page.events
     hasMore.value = page.has_more
   } catch (e) {
+    if (seq !== feedSeq) return
     feedError.value = msg(e, 'Не удалось загрузить ленту')
   } finally {
-    feedLoading.value = false
+    if (seq === feedSeq) feedLoading.value = false
   }
 }
 
 async function loadMore(): Promise<void> {
   if (feedMore.value || !hasMore.value) return
+  const seq = feedSeq
   feedMore.value = true
   try {
     const page = await adminApi.activity({
@@ -190,9 +199,11 @@ async function loadMore(): Promise<void> {
       limit: PAGE,
       offset: events.value.length,
     })
+    if (seq !== feedSeq) return
     events.value.push(...page.events)
     hasMore.value = page.has_more
   } catch (e) {
+    if (seq !== feedSeq) return
     toast.error(msg(e, 'Не удалось догрузить'))
   } finally {
     feedMore.value = false
@@ -225,9 +236,14 @@ watch([days, group, actorId], () => void loadFeed())
 watch(days, () => void loadTeam())
 watch(scopeId, () => {
   // Смена склада сбрасывает фильтр по человеку: на другом складе его нет.
+  // Само присваивание уже поднимет watch выше и перезагрузит ленту —
+  // второй вызов loadFeed() здесь давал два одинаковых запроса на каждое
+  // переключение склада. Если фильтр и так был пуст, watch не сработает,
+  // поэтому грузим вручную только в этом случае.
+  const hadActor = actorId.value !== null
   actorId.value = null
   events.value = []
-  void loadFeed()
+  if (!hadActor) void loadFeed()
   void loadTeam()
 })
 

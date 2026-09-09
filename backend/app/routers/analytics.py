@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ..auth import CAN_SEE_FINANCE, require_role
+from ..auth import CAN_SEE_FINANCE, get_active_membership, require_role
 from ..config import get_settings
 from ..db import get_session
 from ..models import StoreMember
@@ -23,18 +23,41 @@ settings = get_settings()
 
 @router.get("/summary", response_model=AnalyticsSummary)
 async def summary(
-    member: StoreMember = Depends(require_role(*CAN_SEE_FINANCE)),
+    member: StoreMember = Depends(get_active_membership),
     session: AsyncSession = _D(get_session),
 ):
+    """Сводка склада. Финансовая часть — только OWNER/ANALYST.
+
+    Раньше весь ответ был закрыт ролью, и сотрудник получал 403 на главном
+    экране: цифра «вещей в работе» и подсказка «столько-то залежалось»
+    навсегда оставались прочерком — хотя это счётчики, а не деньги, и
+    написаны они ровно для того, кто работает руками.
+    """
     repo = AnalyticsRepository(session)
     store_id = member.store_id
     days = settings.stale_days_threshold
 
     stale_count, stale_ids = await repo.stale_items(store_id, days)
+    active = await repo.active_count(store_id)
+
+    if member.role not in CAN_SEE_FINANCE:
+        return AnalyticsSummary(
+            stale=StaleBucket(
+                threshold_days=days, count=stale_count, item_ids=stale_ids
+            ),
+            by_location=[],
+            turnover=[],
+            total_profit=None,
+            active_count=active,
+            stages=await repo.stage_times(store_id),
+            by_brand=[],
+            by_category=[],
+            by_month=[],
+        )
+
     locations = await repo.roi_by_location(store_id)
     turnover = await repo.turnover(store_id)
     total = await repo.total_profit(store_id)
-    active = await repo.active_count(store_id)
 
     return AnalyticsSummary(
         stale=StaleBucket(threshold_days=days, count=stale_count, item_ids=stale_ids),

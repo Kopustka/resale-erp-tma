@@ -7,9 +7,6 @@ let baseCurrency: Currency = 'BYN'
 export function setBaseCurrency(code: Currency): void {
   baseCurrency = code
 }
-export function getBaseCurrency(): Currency {
-  return baseCurrency
-}
 /**
  * Символ валюты суммы. Без явного кода это сумма склада, показанная в валюте
  * отображения, — значит и символ её, иначе подпись врала бы о цифре.
@@ -60,25 +57,6 @@ export function formatMoneySigned(value: number | null | undefined, cur?: Curren
 export function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
   return `${Math.round(value)}%`
-}
-
-/** Дата в компактном виде «30 июл». */
-const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })
-
-export function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return dateFmt.format(d)
-}
-
-/** Сколько дней прошло с даты (для «зависших» товаров). */
-export function daysSince(iso: string | null | undefined): number | null {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  const diff = Date.now() - d.getTime()
-  return Math.floor(diff / 86_400_000)
 }
 
 /** Округлённое число дней «12 дн.». */

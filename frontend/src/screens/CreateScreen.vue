@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AutocompleteInput from '@/components/AutocompleteInput.vue'
 import { useItemsStore } from '@/stores/items'
 import { useSessionStore } from '@/stores/session'
@@ -83,13 +83,32 @@ const submitting = ref(false)
 
 const anyUploading = computed(() => photos.value.some((p) => p.uploading))
 
-// Название не обязательно: при наличии фото его сгенерирует AI при сохранении.
+/** Значение поля формы — из встроенных или из своих. */
+function valueOf(key: string, builtin: boolean): string {
+  const raw = builtin
+    ? (form as Record<string, unknown>)[key]
+    : extra[key]
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
+/**
+ * Незаполненные обязательные поля — по настройкам магазина, а не по
+ * жёсткому списку. Проверял только сервер, и человек узнавал о пропуске
+ * после того, как загрузил фотографии и заполнил всю форму, — красным
+ * тостом, без подсветки поля.
+ */
+const missing = computed(() =>
+  formFields.value.filter(
+    (f) => f.enabled && f.required && !valueOf(f.key, f.builtin),
+  ),
+)
+/** Ключи для подсветки — Set, чтобы шаблон не искал по массиву на каждое поле. */
+const missingKeys = computed(() => new Set(missing.value.map((f) => f.key)))
+/** Подсвечиваем только после первой попытки: пустая форма не красная сразу. */
+const tried = ref(false)
+
 const canSubmit = computed(
-  () =>
-    form.brand.trim().length > 0 &&
-    form.category.trim().length > 0 &&
-    !submitting.value &&
-    !anyUploading.value,
+  () => missing.value.length === 0 && !submitting.value && !anyUploading.value,
 )
 
 function pickPhotos(): void {
@@ -171,7 +190,18 @@ function toNumber(value: string): number | undefined {
 }
 
 async function submit(): Promise<void> {
-  if (!canSubmit.value) return
+  tried.value = true
+  if (anyUploading.value || submitting.value) return
+  if (missing.value.length) {
+    toast.error('Заполните: ' + missing.value.map((f) => f.label).join(', '))
+    // Прокручиваем к первому пропущенному: список полей настраиваемый и
+    // может не помещаться на экран целиком.
+    await nextTick()
+    document
+      .querySelector('.field-missing')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
   submitting.value = true
 
   const payload: ItemCreate = {
@@ -283,30 +313,56 @@ async function submit(): Promise<void> {
         <input
           v-model="form.title"
           class="field"
+          :class="{ 'field-missing': tried && missingKeys.has('title') }"
           :placeholder="photos.length ? 'Пусто — сгенерируется по фото ✨' : 'Напр. Куртка кожаная'"
         />
         </template>
 
         <label class="lbl">{{ labelOf('brand', 'Бренд') }}</label>
-        <AutocompleteInput v-model="form.brand" field="brand" placeholder="Напр. Prada" />
+        <AutocompleteInput
+          v-model="form.brand"
+          field="brand"
+          placeholder="Напр. Prada"
+          :class="{ 'field-missing': tried && missingKeys.has('brand') }"
+        />
 
         <label class="lbl">{{ labelOf('category', 'Категория') }}</label>
-        <AutocompleteInput v-model="form.category" field="category" placeholder="Напр. Верхняя одежда" />
+        <AutocompleteInput
+          v-model="form.category"
+          field="category"
+          placeholder="Напр. Верхняя одежда"
+          :class="{ 'field-missing': tried && missingKeys.has('category') }"
+        />
 
         <div class="grid2">
           <div>
             <label class="lbl">{{ labelOf('size', 'Размер') }}</label>
-            <input v-model="form.size" class="field" placeholder="M / 48" />
+            <input
+              v-model="form.size"
+              class="field"
+              :class="{ 'field-missing': tried && missingKeys.has('size') }"
+              placeholder="M / 48"
+            />
           </div>
           <div>
             <label class="lbl">{{ labelOf('color', 'Цвет') }}</label>
-            <input v-model="form.color" class="field" placeholder="Чёрный" />
+            <input
+              v-model="form.color"
+              class="field"
+              :class="{ 'field-missing': tried && missingKeys.has('color') }"
+              placeholder="Чёрный"
+            />
           </div>
         </div>
 
         <template v-if="shown('condition')">
           <label class="lbl">{{ labelOf('condition', 'Состояние') }}</label>
-          <input v-model="form.condition" class="field" placeholder="Идеальное / 8 из 10" />
+          <input
+            v-model="form.condition"
+            class="field"
+            :class="{ 'field-missing': tried && missingKeys.has('condition') }"
+            placeholder="Идеальное / 8 из 10"
+          />
         </template>
 
         <template v-if="shown('description')">
@@ -325,12 +381,22 @@ async function submit(): Promise<void> {
         <h2 class="block-title">Закупка и площадка</h2>
         <template v-if="shown('purchase_location')">
           <label class="lbl">{{ labelOf('purchase_location', 'Где куплено') }}</label>
-          <input v-model="form.purchase_location" class="field" placeholder="Рынок / поставщик" />
+          <input
+            v-model="form.purchase_location"
+            class="field"
+            :class="{ 'field-missing': tried && missingKeys.has('purchase_location') }"
+            placeholder="Рынок / поставщик"
+          />
         </template>
 
         <template v-if="shown('sales_platform')">
           <label class="lbl">{{ labelOf('sales_platform', 'Площадка') }}</label>
-          <input v-model="form.sales_platform" class="field" placeholder="Avito / Telegram" />
+          <input
+            v-model="form.sales_platform"
+            class="field"
+            :class="{ 'field-missing': tried && missingKeys.has('sales_platform') }"
+            placeholder="Avito / Telegram"
+          />
         </template>
 
         <label class="lbl">Ссылка на объявление</label>
@@ -343,7 +409,12 @@ async function submit(): Promise<void> {
         <h2 class="block-title">Дополнительно</h2>
         <template v-for="f in customFields" :key="f.id">
           <label class="lbl">{{ f.label }}{{ f.required ? ' *' : '' }}</label>
-          <select v-if="f.kind === 'SELECT'" v-model="extra[f.key]" class="field">
+          <select
+            v-if="f.kind === 'SELECT'"
+            v-model="extra[f.key]"
+            class="field"
+            :class="{ 'field-missing': tried && missingKeys.has(f.key) }"
+          >
             <option value="">Не выбрано</option>
             <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
           </select>
@@ -351,13 +422,17 @@ async function submit(): Promise<void> {
             v-else-if="f.kind === 'TEXTAREA'"
             v-model="extra[f.key]"
             class="field area"
+            :class="{ 'field-missing': tried && missingKeys.has(f.key) }"
             rows="3"
           />
           <input
             v-else
             v-model="extra[f.key]"
             class="field"
-            :class="{ num: f.kind === 'NUMBER' || f.kind === 'MONEY' }"
+            :class="{
+              num: f.kind === 'NUMBER' || f.kind === 'MONEY',
+              'field-missing': tried && missingKeys.has(f.key),
+            }"
             :inputmode="f.kind === 'NUMBER' || f.kind === 'MONEY' ? 'decimal' : 'text'"
           />
           <p v-if="f.hint" class="hint field-hint">{{ f.hint }}</p>
@@ -696,5 +771,12 @@ async function submit(): Promise<void> {
 }
 .save:disabled {
   opacity: 0.45;
+}
+/* Пропущенное обязательное поле. Обводка, а не заливка: текст в поле
+   должен остаться читаемым. */
+.field-missing,
+.field-missing :deep(.field) {
+  border-color: var(--danger, #E5484D);
+  box-shadow: 0 0 0 1px var(--danger, #E5484D) inset;
 }
 </style>

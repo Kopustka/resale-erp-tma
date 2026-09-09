@@ -102,6 +102,10 @@ export interface ItemUpdate {
   price_currency?: Currency
   sales_platform?: string | null
   ad_url?: string | null
+  /** Значения своих полей магазина. */
+  extra?: Record<string, string>
+  /** Версия карточки на момент открытия формы — защита от затирания. */
+  version?: number
 }
 
 export interface ItemPage {
@@ -114,63 +118,6 @@ export interface StatusPatch {
   version: number
   selling_price?: number
   selling_currency?: Currency
-}
-
-/** Сгенерированные AI название и описание (подставляются в форму, не сохраняются). */
-export interface AiDescribeResult {
-  title: string
-  description: string
-}
-
-/** Результат разбора голосовой фразы для предзаполнения формы создания. */
-export interface VoiceParseResult {
-  brand: string | null
-  category: string | null
-  size: string | null
-  color: string | null
-  condition: string | null
-  cost_price: number | null
-  list_price: number | null
-  title: string | null
-  low_confidence: boolean
-  transcript?: string | null
-}
-
-/** Сессия «надиктовать боту»: ссылка в чат + токен для опроса. */
-export interface VoiceCapture {
-  token: string
-  deep_link: string
-  expires_in: number
-}
-
-export interface VoiceCaptureStatus {
-  status: 'waiting' | 'armed' | 'done' | 'expired' | 'error'
-  fields: VoiceParseResult | null
-  transcript: string | null
-  error: string | null
-}
-
-/** Шаблон объявления о скидке с превью и палитрой. */
-export interface DiscountTemplateInfo {
-  body: string
-  is_default: boolean
-  preview: string
-  placeholders: TemplatePlaceholder[]
-}
-
-/** Скидка на вещь. */
-export interface Discount {
-  id: string
-  item_id: string
-  item_sku: string | null
-  item_title: string | null
-  old_price: number
-  new_price: number
-  percent: number
-  currency: Currency
-  scheduled_at: string | null
-  status: 'SCHEDULED' | 'PUBLISHED' | 'CANCELLED'
-  created_at: string
 }
 
 export interface StaleBucket {

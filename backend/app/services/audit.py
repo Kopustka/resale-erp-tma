@@ -44,6 +44,7 @@ CHANNEL_DELETE = "channel.delete"
 
 SETTINGS_EDIT = "settings.edit"
 MEMBER_INVITE = "member.invite"
+MEMBER_REMOVE = "member.remove"
 MEMBER_REVOKE = "member.revoke"
 
 #: Человекочитаемая подпись + значок для ленты. Ключи совпадают с кодами выше.
@@ -68,6 +69,7 @@ LABELS: dict[str, tuple[str, str]] = {
     CHANNEL_DELETE: ("📢", "Отключил канал"),
     SETTINGS_EDIT: ("⚙️", "Изменил настройки"),
     MEMBER_INVITE: ("👤", "Пригласил участника"),
+    MEMBER_REMOVE: ("🚪", "Исключил участника"),
     MEMBER_REVOKE: ("👤", "Отозвал приглашение"),
 }
 
@@ -89,6 +91,24 @@ _GROUP_BY_PREFIX = {
     "settings": "settings",
     "member": "settings",
 }
+
+
+#: Все описанные префиксы — по ним отличаем «прочее» от известных групп.
+ALL_PREFIXES = tuple(sorted(_GROUP_BY_PREFIX))
+
+
+def prefixes_of(group: str) -> list[str]:
+    """Префиксы действий, попадающие в группу.
+
+    Нужны, чтобы фильтровать ленту в SQL, а не после LIMIT: иначе страница
+    из пятидесяти настроечных записей превращалась в пустой ответ «событий
+    по вещам нет», хотя их сотни.
+    """
+    known = {p for p, g in _GROUP_BY_PREFIX.items() if g == group}
+    if group == "items":
+        # «items» — ещё и всё, чей префикс не описан явно.
+        return sorted(known | {"item"})
+    return sorted(known)
 
 
 def group_of(action: str) -> str:

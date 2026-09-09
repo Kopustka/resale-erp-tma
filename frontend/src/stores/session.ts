@@ -18,6 +18,7 @@ interface SessionState {
   pendingInvites: InviteOut[]
   loading: boolean
   membersLoading: boolean
+  membersError: string | null
   ready: boolean
   error: string | null
 }
@@ -30,6 +31,7 @@ export const useSessionStore = defineStore('session', {
     pendingInvites: [],
     loading: false,
     membersLoading: false,
+    membersError: null as string | null,
     ready: false,
     error: null,
   }),
@@ -117,11 +119,22 @@ export const useSessionStore = defineStore('session', {
     async fetchMembers(): Promise<void> {
       if (!this.isOwner) return
       this.membersLoading = true
+      this.membersError = null
       try {
         this.members = await storesApi.members()
+      } catch (e) {
+        // Ошибку запоминаем, а не пробрасываем: раздел «Команда» пустел
+        // молча, без причины и без возможности повторить.
+        this.membersError = e instanceof Error ? e.message : 'Не удалось загрузить команду'
       } finally {
         this.membersLoading = false
       }
+    },
+
+    /** Исключить сотрудника из склада. */
+    async removeMember(userId: string): Promise<void> {
+      await storesApi.removeMember(userId)
+      this.members = this.members.filter((m) => m.user_id !== userId)
     },
 
     async createInvite(username: string, role: Exclude<Role, 'OWNER'>): Promise<InviteOut> {

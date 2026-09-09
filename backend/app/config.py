@@ -28,11 +28,20 @@ class Settings(BaseSettings):
     stale_days_threshold: int = Field(60, alias="STALE_DAYS_THRESHOLD")
 
     # Инфраструктура
-    cors_origins: str = Field("*", alias="CORS_ORIGINS")
+    # Мини-апп отдаётся с того же домена, что и API, поэтому межсайтовые
+    # запросы ему не нужны вовсе. Звёздочка разрешала любому сайту дёргать
+    # наш API из браузера посетителя — подписи он не подделает, но и давать
+    # такую возможность незачем.
+    cors_origins: str = Field("", alias="CORS_ORIGINS")
     media_cache_ttl: int = Field(86400, alias="MEDIA_CACHE_TTL")
     # Загрузка фото из галереи (локальное хранилище)
     media_dir: str = Field("/opt/resale-erp/backend/media", alias="MEDIA_DIR")
     max_upload_mb: int = Field(12, alias="MAX_UPLOAD_MB")
+    #: Ниже этого запаса на диске загрузку не принимаем. Место на сервере
+    #: общее: забив его фотографиями, склад уронил бы и базу, и соседей.
+    min_free_disk_mb: int = Field(1024, alias="MIN_FREE_DISK_MB")
+    #: Через сколько часов удалять файл, который так и не привязали к вещи.
+    orphan_media_hours: int = Field(24, alias="ORPHAN_MEDIA_HOURS")
 
     # AI-генерация названия/описания по фото (Gemini, бесплатный ключ AI Studio)
     gemini_api_key: str = Field("", alias="GEMINI_API_KEY")

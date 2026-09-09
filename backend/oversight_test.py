@@ -20,7 +20,7 @@ from app.services import audit
 from app.services import oversight as ov
 
 TG_BOSS, TG_SOLO, TG_EMP = 999921, 999922, 999923
-TG_LATER, TG_LONE = 999925, 999926
+TG_LATER, TG_LONE, TG_DENY = 999925, 999926, 999927
 ok = bad = 0
 
 
@@ -107,19 +107,64 @@ async def main():
                 "и чужого тоже",
             )
 
-        print("\n[3] Подключение срабатывает сразу")
+        print("\n[3] Запрос ждёт согласия владельца склада")
         async with SessionLocal() as s:
             boss = (await s.execute(select(User).where(User.id == u_boss))).scalar_one()
             out = await admin.request_oversight(
                 payload=OversightRequest(username="@OV_SOLO"), user=boss, session=s
             )
             req_id = out.id
-        chk(out.status == "ACTIVE", "статус ACTIVE без подтверждения", out.status)
+        chk(out.status == "PENDING", "статус PENDING до согласия", out.status)
         chk(out.target_username == "ov_solo", "юзернейм нормализован", out.target_username)
-        chk(out.store_id == solo_id, "склад привязан сразу")
-        chk(out.store_name == "OV-SOLO", "имя склада вернулось", str(out.store_name))
+        chk(out.store_id is None, "склад не привязан, пока не разрешили")
+        async with SessionLocal() as s:
+            chk(await ov.can_watch(s, u_boss, solo_id) is False,
+                "чужая лента закрыта без согласия")
+            # Ровно та дыра, ради которой вернули подтверждение: знать ник
+            # было достаточно, чтобы читать чужой склад.
+            boss = (await s.execute(select(User).where(User.id == u_boss))).scalar_one()
+            await expect_403(
+                admin.resolve_scope(store_id=solo_id, user=boss, session=s),
+                "и панель чужого склада не открывается",
+            )
+
+        print("\n[3b] Владелец разрешает — доступ появляется")
+        async with SessionLocal() as s:
+            solo = (await s.execute(select(User).where(User.id == u_solo))).scalar_one()
+            waiting = await ov.pending_for(s, solo)
+            chk(len(waiting) == 1, "запрос виден адресату", str(len(waiting)))
+            store = await ov.bind(s, waiting[0], solo)
+            await s.commit()
+        chk(store is not None and store.name == "OV-SOLO", "склад привязан после согласия")
         async with SessionLocal() as s:
             chk(await ov.can_watch(s, u_boss, solo_id) is True, "can_watch=True")
+
+        print("\n[3c] Отказ закрывает запрос насовсем")
+        async with SessionLocal() as s:
+            other = User(telegram_id=TG_DENY, username="ov_deny", first_name="Отказ")
+            s.add(other)
+            await s.flush()
+            deny_store = Store(name="OV-DENY", owner_id=other.id)
+            s.add(deny_store)
+            await s.flush()
+            s.add(StoreMember(user_id=other.id, store_id=deny_store.id, role=Role.OWNER))
+            other.current_store_id = deny_store.id
+            await s.commit()
+            deny_store_id, deny_user_id = deny_store.id, other.id
+        async with SessionLocal() as s:
+            boss = (await s.execute(select(User).where(User.id == u_boss))).scalar_one()
+            d = await admin.request_oversight(
+                payload=OversightRequest(username="ov_deny"), user=boss, session=s
+            )
+        async with SessionLocal() as s:
+            other = (await s.execute(select(User).where(User.id == deny_user_id))).scalar_one()
+            req = (await s.execute(
+                select(StoreOversight).where(StoreOversight.id == d.id))).scalar_one()
+            await ov.decline(s, req)
+            await s.commit()
+        async with SessionLocal() as s:
+            chk(await ov.can_watch(s, u_boss, deny_store_id) is False,
+                "после отказа доступа нет")
 
         print("\n[4] Повторный запрос отбивается")
         async with SessionLocal() as s:
@@ -152,9 +197,11 @@ async def main():
             newbie = User(telegram_id=999925, username="ov_later", first_name="Поздний")
             s.add(newbie)
             await s.flush()
-            # Без склада привязка невозможна — как при /start до его создания.
-            nothing = await ov.bind_pending_for(s, newbie)
-            chk(nothing == 0, "без склада не привязывается", str(nothing))
+            # Без склада привязать не к чему — как при /start до его создания.
+            waiting = await ov.pending_for(s, newbie)
+            chk(len(waiting) == 1, "запрос дождался появления человека", str(len(waiting)))
+            chk(await ov.bind(s, waiting[0], newbie) is None,
+                "без склада не привязывается")
 
             late_store = Store(name="OV-LATER", owner_id=newbie.id)
             s.add(late_store)
@@ -162,10 +209,11 @@ async def main():
             s.add(StoreMember(user_id=newbie.id, store_id=late_store.id, role=Role.OWNER))
             newbie.current_store_id = late_store.id
             await s.flush()
-            bound = await ov.bind_pending_for(s, newbie)
+            waiting = await ov.pending_for(s, newbie)
+            bound = await ov.bind(s, waiting[0], newbie)
             await s.commit()
             late_id = late_store.id
-        chk(bound == 1, "после создания склада привязалось", str(bound))
+        chk(bound is not None, "после создания склада и согласия — привязалось")
         async with SessionLocal() as s:
             chk(await ov.can_watch(s, u_boss, late_id) is True, "поздний склад стал доступен")
 
@@ -256,7 +304,7 @@ async def main():
     finally:
         async with SessionLocal() as s:
             ALL_STORES = (await s.execute(select(Store.id).where(
-                Store.name.in_(("OV-BOSS", "OV-SOLO", "OV-LATER"))))).scalars().all()
+                Store.name.in_(("OV-BOSS", "OV-SOLO", "OV-LATER", "OV-DENY"))))).scalars().all()
             await s.execute(delete(StoreOversight).where(
                 StoreOversight.watcher_id.in_([u_boss, u_solo, u_emp])))
             await s.execute(delete(AuditLog).where(AuditLog.store_id.in_(ALL_STORES)))
@@ -266,14 +314,14 @@ async def main():
             await s.execute(delete(Item).where(Item.store_id.in_(ALL_STORES)))
             await s.execute(delete(StoreCounter).where(StoreCounter.store_id.in_(ALL_STORES)))
             await s.execute(delete(StoreMember).where(StoreMember.store_id.in_(ALL_STORES)))
-            for tg in (TG_BOSS, TG_SOLO, TG_EMP, TG_LATER, TG_LONE):
+            for tg in (TG_BOSS, TG_SOLO, TG_EMP, TG_LATER, TG_LONE, TG_DENY):
                 u = (await s.execute(select(User).where(User.telegram_id == tg))).scalar_one_or_none()
                 if u is not None:
                     u.current_store_id = None
             await s.flush()
             await s.execute(delete(Store).where(Store.id.in_(ALL_STORES)))
             await s.execute(delete(User).where(
-                User.telegram_id.in_([TG_BOSS, TG_SOLO, TG_EMP, TG_LATER, TG_LONE])))
+                User.telegram_id.in_([TG_BOSS, TG_SOLO, TG_EMP, TG_LATER, TG_LONE, TG_DENY])))
             await s.commit()
         print("\n[cleanup] ok")
     print(f"\nИТОГ: {ok} успешно, {bad} провалено")

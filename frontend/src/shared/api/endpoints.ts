@@ -34,6 +34,10 @@ export const storesApi = {
   invite: (username: string, role: Exclude<Role, 'OWNER'>) =>
     http.post<InviteOut>(`${V1}/stores/invites`, { username, role }),
   revokeInvite: (inviteId: string) => http.del<void>(`${V1}/stores/invites/${inviteId}`),
+
+  /** Исключить участника из склада. Отзыв приглашения не отключал того,
+      кто уже подключился, — уволенный сотрудник оставался в складе. */
+  removeMember: (userId: string) => http.del<void>(`${V1}/stores/members/${userId}`),
   getSettings: () => http.get<{ base_currency: Currency }>(`${V1}/stores/settings`),
   setBaseCurrency: (base: Currency) =>
     http.patch<{ base_currency: Currency }>(`${V1}/stores/settings`, { base_currency: base }),
@@ -56,6 +60,7 @@ export const itemsApi = {
         limit: params.limit ?? undefined,
         status: params.status ?? undefined,
         brand: params.brand ?? undefined,
+        category: params.category ?? undefined,
         search: params.search ?? undefined,
         ids: params.ids && params.ids.length ? params.ids.join(',') : undefined,
         archived: params.archived ? true : undefined,

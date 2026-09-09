@@ -141,11 +141,11 @@ async def cmd_start(message: Message):
             )
             user.current_store_id = store.id
 
-        # Склад появился только что — теперь есть к чему привязать записи
-        # наблюдения, созданные до первого запуска бота.
-        await oversight.bind_pending_for(session, user)
-
         await session.commit()
+
+        # Склад появился только что — можно показать запросы на просмотр
+        # ленты, которые ждали первого запуска бота.
+        await oversight.ask_pending(session, user)
 
     greeting = "Добро пожаловать в ресейл-ERP!"
     if activated:
@@ -193,6 +193,59 @@ async def on_oversight_revoke(cq: CallbackQuery):
     await cq.message.answer("🔒 Доступ закрыт. Лента больше не видна.")
 
 
+@dp.callback_query(F.data.regexp(rf"^({oversight.ACCEPT}|{oversight.DECLINE}):"))
+async def on_oversight_decide(cq: CallbackQuery):
+    """Разрешить или отклонить просмотр ленты своего склада."""
+    data = cq.data or ""
+    verb, _, raw = data.partition(":")
+    try:
+        req_id = uuid.UUID(raw)
+    except ValueError:
+        await cq.answer("Некорректная кнопка")
+        return
+
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == cq.from_user.id))
+        ).scalar_one_or_none()
+        req = (
+            await s.execute(select(StoreOversight).where(StoreOversight.id == req_id))
+        ).scalar_one_or_none()
+        if user is None or req is None:
+            await cq.answer("Не найдено")
+            return
+        if not user.username or user.username.lower() != req.target_username:
+            await cq.answer("Это не ваш запрос")
+            return
+        if req.status is not OversightStatus.PENDING:
+            await cq.answer("Запрос уже обработан")
+            with suppress(Exception):
+                await cq.message.edit_reply_markup(reply_markup=None)
+            return
+
+        if verb == oversight.DECLINE:
+            await oversight.decline(s, req)
+            await s.commit()
+            await oversight.notify_watcher(s, req, allowed=False)
+            reply = "✖️ Отказано. Ленту склада никто не увидит."
+        else:
+            store = await oversight.bind(s, req, user)
+            if store is None:
+                await cq.answer("Сначала заведите склад — нажмите /start")
+                return
+            await s.commit()
+            await oversight.notify_watcher(s, req, allowed=True, store_name=store.name)
+            reply = (
+                "✅ Доступ открыт. Видна только лента действий и счётчики — "
+                "без закупочных цен и прибыли.\n\nЗакрыть в любой момент — /nadzor"
+            )
+
+    await cq.answer()
+    with suppress(Exception):
+        await cq.message.edit_reply_markup(reply_markup=None)
+    await cq.message.answer(reply)
+
+
 @dp.message(Command("nadzor", "надзор"))
 async def cmd_nadzor(message: Message):
     """Кому открыта лента моего склада — и кнопки, чтобы закрыть."""
@@ -215,8 +268,22 @@ async def cmd_nadzor(message: Message):
             )
         ).all()
 
+    # Непринятые запросы показываем здесь же: если сообщение с кнопками
+    # потерялось в переписке, /nadzor — второй способ до них добраться.
+    async with SessionLocal() as s:
+        user = (
+            await s.execute(select(User).where(User.telegram_id == tg.id))
+        ).scalar_one()
+        waiting = await oversight.pending_for(s, user)
+        for req in waiting:
+            await oversight.deliver(s, req)
+
     if not rows:
-        await message.answer("Вашу ленту действий никто не смотрит.")
+        await message.answer(
+            "Вашу ленту действий никто не смотрит."
+            if not waiting
+            else "Запросы выше ждут вашего решения."
+        )
         return
 
     for req, watcher in rows:

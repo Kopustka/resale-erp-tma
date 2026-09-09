@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { itemsApi } from '@/shared/api/endpoints'
+import { ApiError } from '@/shared/api/http'
 import type {
   Currency,
   ItemCreate,
@@ -117,6 +118,11 @@ export const useItemsStore = defineStore('items', {
 
     async loadMore(): Promise<void> {
       if (this.loadingMore || this.loading || this.nextCursor === null) return
+      // Тот же счётчик, что и в loadFirst. Без него страница, запрошенная до
+      // смены фильтра, дописывалась в уже перерисованный список: под
+      // результатами поиска оказывались посторонние вещи, а курсор указывал
+      // в старую выдачу — дальше подгружалось ещё больше чужого.
+      const seq = ++listRequestSeq
       this.loadingMore = true
       try {
         const page = await itemsApi.list({
@@ -125,12 +131,14 @@ export const useItemsStore = defineStore('items', {
           limit: PAGE_LIMIT,
           archived: this.viewArchived,
         })
+        if (seq !== listRequestSeq) return
         this.items.push(...page.items)
         this.nextCursor = page.next_cursor
       } catch (e) {
+        if (seq !== listRequestSeq) return
         useToastStore().error(e instanceof Error ? e.message : 'Ошибка подгрузки')
       } finally {
-        this.loadingMore = false
+        if (seq === listRequestSeq) this.loadingMore = false
       }
     },
 
@@ -184,10 +192,13 @@ export const useItemsStore = defineStore('items', {
       // 2. Запросы — цепочкой, чтобы версии не разъехались.
       const prev = chain.get(item.id) ?? Promise.resolve(true)
       const run = prev.then(() => this.sendStatus(item.id, target, opts))
-      chain.set(
-        item.id,
-        run.catch(() => false),
-      )
+      const link = run.catch(() => false)
+      chain.set(item.id, link)
+      // Убираем звено, когда очередь по этой вещи опустела. Раньше запись
+      // жила до перезагрузки мини-аппа: по одной на каждую тронутую вещь.
+      void link.then(() => {
+        if (chain.get(item.id) === link) chain.delete(item.id)
+      })
       return run
     },
 
@@ -305,10 +316,21 @@ export const useItemsStore = defineStore('items', {
 
     /** Редактирование полей товара. */
     async updateItem(id: string, patch: ItemUpdate): Promise<ItemOut> {
-      const fresh = await itemsApi.update(id, patch)
-      const at = this.items.findIndex((i) => i.id === id)
-      if (at !== -1) patchInPlace(this.items[at], fresh)
-      return fresh
+      try {
+        const fresh = await itemsApi.update(id, patch)
+        const at = this.items.findIndex((i) => i.id === id)
+        if (at !== -1) patchInPlace(this.items[at], fresh)
+        return fresh
+      } catch (e) {
+        // Карточку успел изменить кто-то другой. Подтягиваем свежие данные
+        // и говорим об этом прямо: сохранять поверх чужой правки вслепую
+        // хуже, чем попросить человека посмотреть, что изменилось.
+        if (e instanceof ApiError && e.isConflict) {
+          await this.reloadItem(id)
+          throw new Error('Карточку изменили в другом месте — данные обновлены, проверьте и сохраните ещё раз')
+        }
+        throw e
+      }
     },
 
     /** Архивация из карточки товара. */

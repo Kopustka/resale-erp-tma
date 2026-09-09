@@ -137,6 +137,9 @@ async function save(): Promise<void> {
     width_cm: toNumber(form.width_cm) ?? null,
     sleeve_cm: toNumber(form.sleeve_cm) ?? null,
     description: form.description.trim() || null,
+    // Версия на момент открытия формы: если карточку успел изменить
+    // кто-то другой, сервер ответит 409, а не примет наш устаревший снимок.
+    version: it.version,
   }
   if (canFinance.value) {
     patch.cost_price = toNumber(form.cost_price) ?? 0
@@ -168,10 +171,23 @@ async function changeStatus(target: ItemStatus): Promise<void> {
   if (!it || busy.value) return
   // Выставление требует цену в объявлении: без неё пост уйдёт без суммы.
   if (requiresListPrice(target)) {
-    const listed = toNumber(form.list_price) ?? it.list_price
+    const typed = toNumber(form.list_price)
+    const listed = typed ?? it.list_price
     if (listed === null || listed === undefined) {
       toast.error('Укажите цену продажи в блоке «Цена продажи» — без неё нельзя выставить')
       return
+    }
+    // Цена введена, но ещё не сохранена — отправляем её до смены статуса.
+    // Иначе проверка на клиенте проходила по значению из формы, а сервер
+    // видел пустую колонку и отвечал «укажите цену продажи», которая на
+    // экране уже стоит. В списке порядок именно такой, здесь он потерялся.
+    if (typed !== undefined && typed !== it.list_price && canFinance.value) {
+      try {
+        await items.updateItem(it.id, { list_price: typed, version: it.version })
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Не удалось сохранить цену')
+        return
+      }
     }
   }
   // Отправка = продажа, поэтому требует цену: из формы или уже сохранённую.

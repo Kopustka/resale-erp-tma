@@ -24,6 +24,25 @@ log = logging.getLogger("api")
 # добавить колонку в существующую он не может. Пока мигратора не завели,
 # держим здесь идемпотентные ALTER: они безопасны при каждом старте.
 _ENSURE_COLUMNS = (
+    # Индекс под фильтр по категории: он появился позже остальных, и на
+    # существующих базах create_all его уже не добавит.
+    "CREATE INDEX IF NOT EXISTS ix_items_store_category ON items (store_id, category)",
+    # Артикул уникален в пределах склада. Счётчик и так берёт строку под
+    # FOR UPDATE, но полагаться на одну лишь дисциплину кода не стоит:
+    # дубль артикула означает две вещи с одним номером в объявлениях.
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'uq_item_store_sku'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM items GROUP BY store_id, sku HAVING count(*) > 1
+        ) THEN
+            ALTER TABLE items ADD CONSTRAINT uq_item_store_sku
+                UNIQUE (store_id, sku);
+        END IF;
+    END $$
+    """,
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS watermark_text VARCHAR(60)",
     "ALTER TABLE post_jobs ADD COLUMN IF NOT EXISTS channel_uid UUID",
@@ -44,7 +63,18 @@ _ENSURE_COLUMNS = (
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_reply_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE stores ADD COLUMN IF NOT EXISTS discount_template TEXT",
     # Состояние вещи писали словами, а колонка была рассчитана на "8/10".
-    "ALTER TABLE items ALTER COLUMN condition TYPE VARCHAR(32)",
+    """
+    DO $$
+    BEGIN
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'items' AND column_name = 'condition'
+              AND character_maximum_length IS DISTINCT FROM 32
+        ) THEN
+            ALTER TABLE items ALTER COLUMN condition TYPE VARCHAR(32);
+        END IF;
+    END $$
+    """,
     # Значения полей, заведённых магазином самостоятельно.
     "ALTER TABLE items ADD COLUMN IF NOT EXISTS extra JSONB NOT NULL DEFAULT '{}'::jsonb",
 )
@@ -79,19 +109,30 @@ _BACKFILL = (
     # Схлопывание статусов до пяти. Значения из enum PostgreSQL удалить
     # нельзя, поэтому переносим строки: «продан» и «завершён» становятся
     # «отправлен», бронь и отмена возвращаются в «выставлен», возврат — тоже.
-    "UPDATE items SET status='SHIPPED' WHERE status IN ('SOLD','COMPLETED')",
-    "UPDATE items SET status='LISTED' WHERE status IN ('BOOKED','CANCELLED','RETURNED')",
-    "UPDATE item_status_logs SET new_status='SHIPPED' WHERE new_status IN ('SOLD','COMPLETED')",
-    "UPDATE item_status_logs SET new_status='LISTED' WHERE new_status IN ('BOOKED','CANCELLED','RETURNED')",
-    "UPDATE item_status_logs SET old_status='SHIPPED' WHERE old_status IN ('SOLD','COMPLETED')",
-    "UPDATE item_status_logs SET old_status='LISTED' WHERE old_status IN ('BOOKED','CANCELLED','RETURNED')",
+    #
+    # Сравниваем через ::text намеренно. Если написать status IN ('SOLD',…),
+    # PostgreSQL приводит литералы к типу колонки ещё при разборе запроса и
+    # падает с «invalid input value for enum», когда таких меток в типе нет.
+    # На чистой базе их и нет — enum создаётся сразу из пяти актуальных, —
+    # так что любое новое развёртывание не поднималось бы вовсе.
+    "UPDATE items SET status='SHIPPED' WHERE status::text IN ('SOLD','COMPLETED')",
+    "UPDATE items SET status='LISTED' WHERE status::text IN ('BOOKED','CANCELLED','RETURNED')",
+    "UPDATE item_status_logs SET new_status='SHIPPED' WHERE new_status::text IN ('SOLD','COMPLETED')",
+    "UPDATE item_status_logs SET new_status='LISTED' WHERE new_status::text IN ('BOOKED','CANCELLED','RETURNED')",
+    "UPDATE item_status_logs SET old_status='SHIPPED' WHERE old_status::text IN ('SOLD','COMPLETED')",
+    "UPDATE item_status_logs SET old_status='LISTED' WHERE old_status::text IN ('BOOKED','CANCELLED','RETURNED')",
     # 2. Уже опубликованные посты -> item_posts, чтобы пометка «продано»
     #    и защита от повторной публикации продолжали работать.
     """
     INSERT INTO item_posts (item_id, channel_id, message_id, sold_marked)
     SELECT i.id, c.id, i.channel_message_id, FALSE
     FROM items i
-    JOIN channels c ON c.store_id = i.store_id
+    JOIN LATERAL (
+        SELECT ch.id FROM channels ch
+        WHERE ch.store_id = i.store_id
+        ORDER BY ch.created_at, ch.id
+        LIMIT 1
+    ) c ON TRUE
     WHERE i.channel_message_id IS NOT NULL
     ON CONFLICT ON CONSTRAINT uq_post_item_channel DO NOTHING
     """,
@@ -126,13 +167,35 @@ async def lifespan(app: FastAPI):
         except Exception as e:  # noqa: BLE001
             log.warning("не удалось прогреть курсы: %s", e)
 
+    async def _sweep_media() -> None:
+        """Раз в сутки убираем файлы, на которые никто не ссылается.
+
+        Отдельной службы не заводим: работа редкая и короткая. Первый проход
+        отложен на минуту, чтобы не соперничать со стартом за диск.
+        """
+        from .services import media_gc
+
+        while True:
+            await asyncio.sleep(60)
+            try:
+                count, size = await media_gc.collect_orphans(dry_run=False)
+                if count:
+                    log.info("убрано неприкаянных файлов: %s (%.1f МБ)",
+                             count, size / 1024 / 1024)
+            except Exception as e:  # noqa: BLE001
+                log.warning("уборка файлов не удалась: %s", e)
+            await asyncio.sleep(24 * 3600)
+
     warmup = asyncio.create_task(_warm_fx(), name="fx-warmup")
+    sweeper = asyncio.create_task(_sweep_media(), name="media-gc")
     try:
         yield
     finally:
         warmup.cancel()
-        with suppress(asyncio.CancelledError):
-            await warmup
+        sweeper.cancel()
+        for t in (warmup, sweeper):
+            with suppress(asyncio.CancelledError):
+                await t
 
 
 app = FastAPI(title="Resale ERP TMA", version="1.0.0", lifespan=lifespan)

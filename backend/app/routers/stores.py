@@ -4,13 +4,14 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import OWNER_ONLY, get_active_membership, get_current_user, require_role
 from ..db import get_session
 from ..models import (
     InviteStatus,
+    Item,
     Role,
     Store,
     StoreInvite,
@@ -96,13 +97,38 @@ async def set_settings(
     store = (
         await session.execute(select(Store).where(Store.id == member.store_id))
     ).scalar_one()
+    was = (store.base_currency or "BYN").upper()
     store.base_currency = cur
+
+    moved = 0
+    if was != cur:
+        # Пересчитываем уже заведённые вещи. Раньше менялась только надпись:
+        # старые суммы оставались в прежней валюте, новые считались в новой,
+        # и аналитика складывала рубли с долларами в одно число, ничем не
+        # выдавая ошибку.
+        #
+        # Множитель один на всех и берётся на день переключения. Историю
+        # он не искажает: суммы вещи масштабируются вместе, поэтому прибыль
+        # и ROI остаются прежними — меняется только единица измерения.
+        factor = await fx.factor(was, cur)
+        cols = (
+            "cost_price", "restore_cost", "delivery_cost", "platform_fee",
+            "selling_price", "list_price", "price_before_discount",
+        )
+        res = await session.execute(
+            update(Item)
+            .where(Item.store_id == member.store_id)
+            .values(**{c: func.round(getattr(Item, c) * factor, 2) for c in cols})
+        )
+        moved = res.rowcount or 0
+
     audit.record(
         session,
         store_id=member.store_id,
         user_id=member.user_id,
         action=audit.SETTINGS_EDIT,
-        summary=f"базовая валюта → {cur}",
+        summary=f"базовая валюта {was} → {cur}"
+        + (f" · пересчитано вещей: {moved}" if moved else ""),
     )
     await session.commit()
     return StoreSettings(base_currency=cur)
@@ -152,7 +178,9 @@ async def invite_member(
 
     # Уже участник?
     existing_user = (
-        await session.execute(select(User).where(User.username == uname))
+        await session.execute(
+            select(User).where(func.lower(User.username) == uname)
+        )
     ).scalar_one_or_none()
     if existing_user:
         already = (
@@ -221,6 +249,81 @@ async def invite_member(
     await session.commit()
     await session.refresh(inv)
     return InviteOut.model_validate(inv)
+
+
+@router.delete("/members/{user_id}", status_code=204)
+async def remove_member(
+    user_id: uuid.UUID,
+    member: StoreMember = Depends(require_role(*OWNER_ONLY)),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Исключить сотрудника из склада.
+
+    Раньше такого пути не было вовсе: отозвать можно было только
+    приглашение, а уже подключённый человек оставался в складе навсегда.
+    Уволенный сотрудник продолжал видеть и править чужие вещи.
+
+    Владельца не исключаем: склад без владельца настроить будет некому.
+    Заведённые им вещи и записи журнала остаются — это история склада,
+    а не собственность человека.
+    """
+    if user_id == user.id:
+        raise HTTPException(422, "Себя из склада не исключить")
+
+    target = (
+        await session.execute(
+            select(StoreMember).where(
+                StoreMember.user_id == user_id,
+                StoreMember.store_id == member.store_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(404, "Участник не найден")
+    if target.role == Role.OWNER:
+        raise HTTPException(422, "Владельца склада исключить нельзя")
+
+    gone = (
+        await session.execute(select(User).where(User.id == user_id))
+    ).scalar_one_or_none()
+
+    # Гасим и приглашение, иначе человек вернётся при следующем /start.
+    if gone is not None and gone.username:
+        await session.execute(
+            update(StoreInvite)
+            .where(
+                StoreInvite.store_id == member.store_id,
+                StoreInvite.username == gone.username.lower(),
+                StoreInvite.status.in_((InviteStatus.PENDING, InviteStatus.ACCEPTED)),
+            )
+            .values(status=InviteStatus.REVOKED)
+        )
+
+    # Если исключённый сейчас «стоит» на этом складе — переводим на другой
+    # свой, а если других нет, оставляем без активного: приложение покажет
+    # понятный экран, а не чужие вещи.
+    if gone is not None and gone.current_store_id == member.store_id:
+        other = (
+            await session.execute(
+                select(StoreMember.store_id).where(
+                    StoreMember.user_id == user_id,
+                    StoreMember.store_id != member.store_id,
+                )
+            )
+        ).scalars().first()
+        gone.current_store_id = other
+
+    handle = f"@{gone.username}" if gone is not None and gone.username else "участник"
+    audit.record(
+        session,
+        store_id=member.store_id,
+        user_id=user.id,
+        action=audit.MEMBER_REMOVE,
+        summary=f"{handle} · {target.role.value} · исключён из склада",
+    )
+    await session.delete(target)
+    await session.commit()
 
 
 @router.delete("/invites/{invite_id}", status_code=204)

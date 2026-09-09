@@ -211,6 +211,8 @@ class Item(Base):
     __table_args__ = (
         Index("ix_items_store_status_arch", "store_id", "status", "archived_at"),
         Index("ix_items_store_brand", "store_id", "brand"),
+        Index("ix_items_store_category", "store_id", "category"),
+        UniqueConstraint("store_id", "sku", name="uq_item_store_sku"),
         Index("ix_items_store_sold", "store_id", "sold_date"),
         Index("ix_items_store_listed", "store_id", "listed_date"),
     )

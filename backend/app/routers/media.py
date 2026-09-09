@@ -11,14 +11,25 @@ import uuid
 from pathlib import Path
 
 import httpx
-from fastapi import Query, APIRouter, Depends, File, HTTPException, Response, UploadFile
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from ..auth import get_active_membership
 from ..config import get_settings
-from ..services import thumbs
+from ..services import media_gc, thumbs
 from ..db import get_session
 from ..models import Item, Role, StoreMember
 
@@ -59,6 +70,7 @@ async def _fetch_telegram_file(file_id: str) -> tuple[bytes, str]:
 @router.post("/upload")
 async def upload_media(
     file: UploadFile = File(...),
+    content_length: int | None = Header(None, alias="Content-Length"),
     member: StoreMember = Depends(get_active_membership),
 ):
     """Приём фото из галереи/камеры. Возвращает photo_id вида 'local:<name>'."""
@@ -69,18 +81,32 @@ async def upload_media(
     if ext is None:
         raise HTTPException(422, "Unsupported image type")
 
+    # Диск общий с базой и соседними проектами. Отказ в загрузке неприятен,
+    # но переживаем; кончившееся место кладёт весь сервер.
+    if media_gc.free_mb(MEDIA_DIR) < settings.min_free_disk_mb:
+        raise HTTPException(507, "На сервере кончается место, загрузка приостановлена")
+
+    limit = settings.max_upload_mb * 1024 * 1024
+    # Сначала по заголовку, до чтения. Раньше файл целиком уезжал в память и
+    # только потом отвергался по размеру: десяток одновременных отправок по
+    # двенадцать мегабайт съедали память сервера ни за что.
+    if content_length is not None and content_length > limit + 1024:
+        raise HTTPException(413, f"Файл больше {settings.max_upload_mb} МБ")
+
     data = await file.read()
-    if len(data) > settings.max_upload_mb * 1024 * 1024:
-        raise HTTPException(413, f"File exceeds {settings.max_upload_mb} MB")
+    if len(data) > limit:
+        raise HTTPException(413, f"Файл больше {settings.max_upload_mb} МБ")
     if not data:
-        raise HTTPException(422, "Empty file")
+        raise HTTPException(422, "Пустой файл")
 
     name = f"{uuid.uuid4().hex}.{ext}"
-    (MEDIA_DIR / name).write_bytes(data)
+    # Запись на диск блокирующая: в event loop она останавливает обработку
+    # всех остальных запросов на время сохранения файла.
+    await run_in_threadpool((MEDIA_DIR / name).write_bytes, data)
     return {"photo_id": f"{LOCAL_PREFIX}{name}"}
 
 
-def _serve_local(entry: str, width: int | None = None) -> FileResponse:
+async def _serve_local(entry: str, width: int | None = None) -> FileResponse:
     name = entry[len(LOCAL_PREFIX):]
     # защита от path traversal
     if "/" in name or "\\" in name or ".." in name:
@@ -89,7 +115,11 @@ def _serve_local(entry: str, width: int | None = None) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "Media file missing")
     if width is not None:
-        thumb = thumbs.for_local(name, width)
+        # Первая миниатюра каждого снимка — это чтение файла, разворот по
+        # EXIF и LANCZOS-ресайз: сотни миллисекунд, на которые вставал весь
+        # воркер. После деплоя, когда кэш пуст, список из тридцати вещей
+        # означал тридцать таких пауз подряд для всех пользователей сразу.
+        thumb = await run_in_threadpool(thumbs.for_local, name, width)
         if thumb is not None:
             path = thumb
     return FileResponse(
@@ -111,13 +141,15 @@ async def get_media(
             select(Item).where(Item.id == item_id, Item.store_id == member.store_id)
         )
     ).scalar_one_or_none()
-    if item is None or index >= len(item.photo_file_ids or []):
+    # index < 0 проходил проверку сверху и по правилам Python отдавал фото
+    # с конца — не утечка (вещь своя), но не то, что просили.
+    if item is None or index < 0 or index >= len(item.photo_file_ids or []):
         raise HTTPException(404, "Photo not found")
 
     width = thumbs.normalize_width(w)
     entry = item.photo_file_ids[index]
     if entry.startswith(LOCAL_PREFIX):
-        return _serve_local(entry, width)
+        return await _serve_local(entry, width)
 
     # Telegram file_id
     content, ctype = await _fetch_telegram_file(entry)

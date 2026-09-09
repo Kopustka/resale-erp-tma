@@ -2,14 +2,36 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Item, ItemStatus, ItemStatusLog, StoreCounter
+from fastapi import HTTPException
+
+from ..models import (
+    Discount,
+    DropItem,
+    Item,
+    ItemPost,
+    ItemStatus,
+    ItemStatusLog,
+    PostJob,
+    StoreCounter,
+)
 from ..services.fsm import PRE_LISTED, PRE_SOLD
+
+
+def _like(value: str) -> str:
+    """Экранирует спецсимволы LIKE.
+
+    Без этого поиск по «100%» или «a_b» означал «что угодно»: процент и
+    подчёркивание — шаблонные символы, и человек получал весь склад вместо
+    одной вещи.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _encode_cursor(created_at: datetime, item_id: uuid.UUID) -> str:
@@ -18,9 +40,17 @@ def _encode_cursor(created_at: datetime, item_id: uuid.UUID) -> str:
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
-    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-    ts, iid = raw.split("|")
-    return datetime.fromisoformat(ts), uuid.UUID(iid)
+    """Курсор приходит от клиента, значит может прийти любым.
+
+    Раньше мусор в нём ронял base64/uuid прямо в обработчике и человек
+    видел «Внутреннюю ошибку» вместо понятного отказа.
+    """
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        ts, iid = raw.split("|")
+        return datetime.fromisoformat(ts), uuid.UUID(iid)
+    except (ValueError, binascii.Error, UnicodeDecodeError) as e:
+        raise HTTPException(422, "Некорректный курсор страницы") from e
 
 
 class ItemRepository:
@@ -51,6 +81,7 @@ class ItemRepository:
         cursor: str | None = None,
         status: ItemStatus | None = None,
         brand: str | None = None,
+        category: str | None = None,
         search: str | None = None,
         stale_before: datetime | None = None,
         ids: list[uuid.UUID] | None = None,
@@ -63,13 +94,15 @@ class ItemRepository:
         if status is not None:
             conds.append(Item.status == status)
         if brand:
-            conds.append(Item.brand.ilike(brand))
+            conds.append(Item.brand.ilike(_like(brand), escape="\\"))
+        if category:
+            conds.append(Item.category.ilike(_like(category), escape="\\"))
         if search:
-            like = f"%{search}%"
+            like = f"%{_like(search)}%"
             conds.append(
-                Item.brand.ilike(like)
-                | Item.sku.ilike(like)
-                | Item.title.ilike(like)
+                Item.brand.ilike(like, escape="\\")
+                | Item.sku.ilike(like, escape="\\")
+                | Item.title.ilike(like, escape="\\")
             )
         if stale_before is not None:
             conds.append(Item.listed_date.isnot(None))
@@ -185,12 +218,22 @@ class ItemRepository:
         item.version += 1
         item.updated_at = datetime.now(timezone.utc)
 
+    #: Всё, что ссылается на вещь. Проверяется тестом против pg_constraint:
+    #: стоит появиться новой связи — и удаление снова начнёт падать.
+    CHILD_TABLES = (ItemStatusLog, ItemPost, PostJob, DropItem, Discount)
+
     async def hard_delete(self, item: Item) -> None:
-        """Безвозвратное удаление: сначала аудит-лог (FK), затем сам товар."""
+        """Безвозвратное удаление: сначала всё, что ссылается, затем товар.
+
+        Раньше чистились только логи статусов, а на вещь ссылаются ещё
+        публикации, задания, дропы и скидки. У любой опубликованной вещи
+        удаление падало с ошибкой внешнего ключа и 500-й в ответ.
+        """
         item_id = item.id
-        await self.session.execute(
-            delete(ItemStatusLog).where(ItemStatusLog.item_id == item_id)
-        )
+        for model in self.CHILD_TABLES:
+            await self.session.execute(
+                delete(model).where(model.item_id == item_id)
+            )
         await self.session.execute(delete(Item).where(Item.id == item_id))
 
     async def suggest(self, store_id: uuid.UUID, field: str, q: str) -> list[str]:
@@ -198,7 +241,7 @@ class ItemRepository:
         rows = (
             await self.session.execute(
                 select(col)
-                .where(Item.store_id == store_id, col.ilike(f"{q}%"))
+                .where(Item.store_id == store_id, col.ilike(f"{_like(q)}%", escape="\\"))
                 .distinct()
                 .limit(10)
             )

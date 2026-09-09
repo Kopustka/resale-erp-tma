@@ -145,6 +145,11 @@ def split_payload(data: dict, fields: list[StoreField]) -> tuple[dict, dict]:
 _COLUMN_EXTRAS = {
     "photo_file_ids", "ad_url", "cost_currency", "price_currency",
     "platform_fee", "selling_price",
+    # Дата закупки полем формы не является, но приходит в теле. Пока её
+    # здесь не было, split_payload молча её выбрасывал, и дата закупки у
+    # всех вещей равнялась дню заведения карточки — а на ней держатся
+    # сроки оборачиваемости и «где вещи застревают».
+    "purchase_date",
 }
 
 
@@ -171,3 +176,22 @@ def missing_required(
         if value is None or (isinstance(value, str) and not value.strip()):
             out.append(f.label)
     return out
+
+
+async def money_extra_keys(session, store_id) -> frozenset[str]:
+    """Ключи своих полей магазина, в которых лежат деньги.
+
+    Нужны, чтобы вырезать их из ответа для ролей без доступа к финансам:
+    колонки-то отфильтрованы по имени, а своё поле «Отдал курьеру» типа
+    MONEY прошло бы насквозь вместе со всем extra.
+    """
+    rows = (
+        await session.execute(
+            select(StoreField.key).where(
+                StoreField.store_id == store_id,
+                StoreField.kind == FieldKind.MONEY,
+                StoreField.builtin.is_(False),
+            )
+        )
+    ).scalars()
+    return frozenset(rows)

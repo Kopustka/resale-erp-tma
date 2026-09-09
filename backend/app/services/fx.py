@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 import time
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -30,6 +31,11 @@ _FALLBACK_TO_BYN: dict[str, Decimal] = {
 _cache: dict[str, Decimal] = {}
 _cache_ts: float = 0.0
 _TTL = 6 * 3600  # 6 часов
+#: Сколько ждать перед новой попыткой, если Нацбанк не ответил. Без паузы
+#: каждая конвертация лезла в сеть заново и висела по 12 секунд: сохранение
+#: одной вещи в валюте превращалось в минуту с лишним.
+_RETRY_AFTER_FAIL = 300
+_lock = asyncio.Lock()
 _NBRB_URL = "https://api.nbrb.by/exrates/rates?periodicity=0"
 
 
@@ -56,13 +62,34 @@ async def _refresh() -> None:
         log.warning("NBRB fetch failed (%s), using %s", e, "cache" if _cache else "fallback")
         if not _cache:
             _cache = dict(_FALLBACK_TO_BYN)
-            _cache_ts = time.time()
+        # Отметку времени двигаем в любом случае — иначе кэш считается
+        # просроченным вечно и мы ходим в недоступный Нацбанк на каждую
+        # конвертацию. Ставим её в прошлое, чтобы повтор случился через
+        # _RETRY_AFTER_FAIL, а не через полный TTL.
+        _cache_ts = time.time() - _TTL + _RETRY_AFTER_FAIL
 
 
 async def _rate_to_byn(cur: str) -> Decimal:
-    if time.time() - _cache_ts > _TTL or cur not in _cache:
-        await _refresh()
+    # Под замком: сохранение вещи конвертирует до шести сумм подряд, и без
+    # него холодный кэш означал шесть параллельных запросов к Нацбанку.
+    if time.time() - _cache_ts > _TTL:
+        async with _lock:
+            if time.time() - _cache_ts > _TTL:
+                await _refresh()
     return _cache.get(cur, _FALLBACK_TO_BYN.get(cur, Decimal("1")))
+
+
+async def factor(from_cur: str, to_cur: str) -> Decimal:
+    """Множитель перевода без округления до копейки.
+
+    convert() квантует результат до 0.01 — для суммы это правильно, а для
+    коэффициента грубо: BYN→USD дало бы 0.32 вместо 0.3226 и увело бы
+    пересчёт всего склада на полтора процента.
+    """
+    from_cur, to_cur = (from_cur or "BYN").upper(), (to_cur or "BYN").upper()
+    if from_cur == to_cur:
+        return Decimal("1")
+    return await _rate_to_byn(from_cur) / await _rate_to_byn(to_cur)
 
 
 def _q(v: Decimal) -> Decimal:

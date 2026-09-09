@@ -10,7 +10,7 @@
  * который сам прокручивается, на телефоне попадает мимо и конфликтует со
  * скроллом. Кнопка вверх-вниз скучнее, но срабатывает всегда.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { closeOverlay } from '@/app/navigation'
 import { fieldsApi } from '@/shared/api/endpoints'
 import { ApiError } from '@/shared/api/http'
@@ -86,12 +86,39 @@ function toggleRequired(f: FormField): void {
   dirty.value = true
 }
 
-function rename(f: FormField, value: string): void {
+function rename(f: FormField, value: string, el?: EventTarget | null): void {
   const v = value.trim()
-  if (!v || v === f.label) return
+  if (!v) {
+    // Пустое имя не принимаем, но и в поле его не оставляем: f.label не
+    // менялся, поэтому Vue не перерисовывал input, и человек видел поле
+    // без названия, хотя сохранилось бы старое.
+    if (el instanceof HTMLInputElement) el.value = f.label
+    return
+  }
+  if (v === f.label) return
   f.label = v
   dirty.value = true
 }
+
+/** Крестик при несохранённых правках спрашивает, а не выбрасывает их. */
+const confirmClose = ref(false)
+let closeTimer: ReturnType<typeof setTimeout> | null = null
+
+function tryClose(): void {
+  if (!dirty.value || confirmClose.value) {
+    if (closeTimer) clearTimeout(closeTimer)
+    closeOverlay()
+    return
+  }
+  confirmClose.value = true
+  toast.show({ message: 'Правки не сохранены. Нажмите ещё раз, чтобы выйти', kind: 'info' })
+  if (closeTimer) clearTimeout(closeTimer)
+  closeTimer = setTimeout(() => (confirmClose.value = false), 4000)
+}
+
+onBeforeUnmount(() => {
+  if (closeTimer) clearTimeout(closeTimer)
+})
 
 function move(index: number, delta: number): void {
   const to = index + delta
@@ -171,7 +198,7 @@ async function remove(f: FormField): Promise<void> {
 <template>
   <div class="fields">
     <header class="head">
-      <button class="close" aria-label="Закрыть" @click="closeOverlay">
+      <button class="close" aria-label="Закрыть" @click="tryClose">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
              stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="m6 6 12 12M18 6 6 18" />
@@ -196,12 +223,12 @@ async function remove(f: FormField): Promise<void> {
         <ul class="list">
           <li v-for="(f, i) in fields" :key="f.id" class="row" :class="{ off: !f.enabled }">
             <div class="order">
-              <button class="ord" :disabled="i === 0" aria-label="Выше" @click="move(i, -1)">
+              <button class="ord hit" :disabled="i === 0" aria-label="Выше" @click="move(i, -1)">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
                      stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6" /></svg>
               </button>
               <button
-                class="ord"
+                class="ord hit"
                 :disabled="i === fields.length - 1"
                 aria-label="Ниже"
                 @click="move(i, 1)"
@@ -217,7 +244,7 @@ async function remove(f: FormField): Promise<void> {
                 :value="f.label"
                 maxlength="60"
                 :aria-label="`Название поля ${f.label}`"
-                @change="rename(f, ($event.target as HTMLInputElement).value)"
+                @change="rename(f, ($event.target as HTMLInputElement).value, $event.target)"
               />
               <div class="meta">
                 <span class="kind">{{ KIND_LABEL[f.kind] }}</span>
