@@ -1,0 +1,55 @@
+[Unit]
+Description=Resale ERP Telegram bot (aiogram)
+After=network.target postgresql.service resale-api.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+# Не от root. Раньше пробой в приложении означал бы полный доступ к
+# серверу; теперь — доступ от лица, у которого нет ни своей оболочки,
+# ни права переписать собственный код.
+User=resale
+Group=resale
+
+WorkingDirectory=/opt/resale-erp/backend
+ExecStart=/opt/resale-venv/bin/python -m app.bot
+Restart=always
+RestartSec=5
+
+# Ограничения ядра. Приложению нужны только свой каталог, сеть и база.
+# Свой домашний каталог в /run. asyncpg при подключении заглядывает в
+# ~/.postgresql/postgresql.crt и ловит только «файла нет»; при ProtectHome
+# оттуда приходит «доступ закрыт», и подключение к базе падало на старте.
+# Снимки отдаёт само приложение, не nginx, поэтому читать их
+# посторонним незачем.
+UMask=0077
+
+RuntimeDirectory=resale
+RuntimeDirectoryMode=0750
+Environment=HOME=/run/resale
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RemoveIPC=true
+# Единственное место, куда приложение пишет, — снимки и их миниатюры.
+ReadWritePaths=/opt/resale-erp/backend/media
+# Только обычные сокеты: ни сырых пакетов, ни экзотических семейств.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
