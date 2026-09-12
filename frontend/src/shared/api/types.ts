@@ -108,6 +108,13 @@ export interface ItemUpdate {
   version?: number
 }
 
+export interface ExportResult {
+  filename: string
+  /** Сколько вещей попало в файл. */
+  rows: number
+  bytes: number
+}
+
 export interface ItemPage {
   items: ItemOut[]
   next_cursor: string | null

@@ -45,6 +45,7 @@ CHANNEL_DELETE = "channel.delete"
 SETTINGS_EDIT = "settings.edit"
 MEMBER_INVITE = "member.invite"
 MEMBER_REMOVE = "member.remove"
+DATA_EXPORT = "data.export"
 MEMBER_REVOKE = "member.revoke"
 
 #: Человекочитаемая подпись + значок для ленты. Ключи совпадают с кодами выше.
@@ -70,6 +71,7 @@ LABELS: dict[str, tuple[str, str]] = {
     SETTINGS_EDIT: ("⚙️", "Изменил настройки"),
     MEMBER_INVITE: ("👤", "Пригласил участника"),
     MEMBER_REMOVE: ("🚪", "Исключил участника"),
+    DATA_EXPORT: ("📄", "Выгрузил склад в файл"),
     MEMBER_REVOKE: ("👤", "Отозвал приглашение"),
 }
 
@@ -90,6 +92,7 @@ _GROUP_BY_PREFIX = {
     "channel": "settings",
     "settings": "settings",
     "member": "settings",
+    "data": "settings",
 }
 
 

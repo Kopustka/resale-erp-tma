@@ -276,6 +276,19 @@ class AnalyticsSummary(BaseModel):
     by_month: list[MonthPoint] = []
 
 
+# ------------------------------ Выгрузка ------------------------------- #
+class ExportRequest(BaseModel):
+    #: Архив по умолчанию не берём: чаще нужен рабочий склад, а не вся
+    #: история. Кому нужна история — ставит галочку.
+    include_archived: bool = False
+
+
+class ExportResult(BaseModel):
+    filename: str
+    rows: int
+    bytes: int
+
+
 # --------------------------- Склады / команда --------------------------- #
 class StoreOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import Base, engine
-from .routers import admin, analytics, fields, items, media, stores
+from .routers import admin, analytics, export, fields, items, media, stores
 
 settings = get_settings()
 log = logging.getLogger("api")
@@ -305,3 +305,4 @@ app.include_router(stores.router)
 app.include_router(media.router)
 app.include_router(admin.router)
 app.include_router(fields.router)
+app.include_router(export.router)

@@ -8,6 +8,7 @@ import type {
   FormField,
   AnalyticsSummary,
   Currency,
+  ExportResult,
   InviteOut,
   ItemCreate,
   ItemFilters,
@@ -145,6 +146,17 @@ export const adminApi = {
 }
 
 // -------------------------- Поля формы вещи -------------------------- //
+export const exportApi = {
+  /**
+   * Выгрузка склада. Файл приходит сообщением от бота, а не скачиванием:
+   * во вебвью Telegram на iPhone скачивание часто не делает ничего.
+   */
+  items: (includeArchived: boolean) =>
+    http.post<ExportResult>(`${V1}/export/items`, {
+      include_archived: includeArchived,
+    }),
+}
+
 export const fieldsApi = {
   list: () => http.get<FormField[]>(`${V1}/fields`),
   save: (fields: FieldPatch[]) => http.put<FormField[]>(`${V1}/fields`, { fields }),

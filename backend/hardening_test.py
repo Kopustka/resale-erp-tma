@@ -386,6 +386,86 @@ async def main() -> None:
         await _gc.collect_orphans(dry_run=False)
         chk(keep.exists(), "служебный .gitkeep пережил уборку")
 
+        # ---------------------------------------------------------------- #
+        print("\n[12] Выгрузка склада в CSV")
+        from app.services import export as export_svc
+        from app.routers import export as export_router
+        from app.schemas import ExportRequest
+
+        async with SessionLocal() as s:
+            name, data, cnt = await export_svc.build_items_csv(
+                s, store_id, show_finance=True, include_archived=True)
+            csv_text = data.decode("utf-8")
+        head = csv_text.split("\r\n")[0]
+        chk(csv_text.startswith("\ufeff"),
+            "файл начинается с BOM — иначе Excel покажет кракозябры")
+        chk(head.count(";") > head.count(","),
+            "разделитель — точка с запятой (русский Excel)", head[:60])
+        chk(name.endswith(".csv") and STORE_NAME in name,
+            "в имени файла склад и расширение", name)
+        chk(cnt > 0, "вещи попали в файл", str(cnt))
+        chk("Прибыль, BYN" in head or "Прибыль, USD" in head,
+            "у прибыли подписана валюта учёта", head[-80:])
+
+        # Числа с запятой: иначе русский Excel читает суммы как текст.
+        body = [l for l in csv_text.split("\r\n")[1:] if l]
+        import re as _re
+        _DATE = _re.compile(r"^\d{2}\.\d{2}\.\d{4}$")  # дата — законные точки
+        money_cells = [
+            c for line in body for c in line.split(";")
+            if c and not _DATE.match(c)
+            and all(ch.isdigit() or ch in ",." for ch in c) and ("," in c or "." in c)
+        ]
+        chk(all("." not in c for c in money_cells),
+            "в числах запятая, а не точка", str(money_cells[:5]))
+
+        # Описание с переводом строки не должно ломать таблицу на строки.
+        async with SessionLocal() as s:
+            mo = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == owner_id, StoreMember.store_id == store_id))).scalar_one()
+            u = (await s.execute(select(User).where(User.id == owner_id))).scalar_one()
+            await items_router.create_item(
+                payload=ItemCreate(brand="Multi", category="Шарфы", title="С переносами",
+                                   description="первая строка\nвторая строка\r\nтретья"),
+                member=mo, session=s, user=u,
+            )
+        async with SessionLocal() as s:
+            name2, data2, cnt2 = await export_svc.build_items_csv(
+                s, store_id, show_finance=True, include_archived=True)
+        lines = [l for l in data2.decode("utf-8").split("\r\n") if l]
+        chk(len(lines) == cnt2 + 1,
+            "строк в файле ровно по числу вещей плюс заголовок",
+            f"строк {len(lines)}, вещей {cnt2}")
+
+        # Сотрудник склад целиком не выгружает.
+        async with SessionLocal() as s:
+            s.add(StoreMember(user_id=emp_id, store_id=store_id, role=Role.EMPLOYEE))
+            await s.commit()
+        from app.auth import CAN_SEE_FINANCE, require_role
+        gate = require_role(*CAN_SEE_FINANCE)
+        async with SessionLocal() as s:
+            me = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == emp_id, StoreMember.store_id == store_id))).scalar_one()
+            mo = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == owner_id, StoreMember.store_id == store_id))).scalar_one()
+            try:
+                await gate(member=me)
+                chk(False, "сотруднику выгрузка запрещена")
+            except HTTPException as e:
+                chk(e.status_code == 403, "сотруднику выгрузка запрещена (403)",
+                    f"код {e.status_code}")
+            chk(await gate(member=mo) is mo, "владельцу выгрузка разрешена")
+
+        # И денежных колонок в его варианте файла нет вовсе.
+        async with SessionLocal() as s:
+            _, emp_data, _ = await export_svc.build_items_csv(
+                s, store_id, show_finance=False, include_archived=True)
+        emp_head = emp_data.decode("utf-8").split("\r\n")[0]
+        chk(not any(w in emp_head for w in ("Закупка", "Прибыль", "ROI", "Продано за")),
+            "в варианте без финансов нет денежных колонок", emp_head[-60:])
+        chk("Отдал курьеру" not in emp_head,
+            "своё денежное поле тоже не попало", emp_head)
+
     finally:
         async with SessionLocal() as s:
             sids = (await s.execute(

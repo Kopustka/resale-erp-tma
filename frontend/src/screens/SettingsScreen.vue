@@ -12,7 +12,7 @@ import {
   type MemberOut,
   type Role,
 } from '@/shared/api/types'
-import { storesApi } from '@/shared/api/endpoints'
+import { exportApi, storesApi } from '@/shared/api/endpoints'
 import { hapticNotify, hapticSelection } from '@/shared/telegram/webapp'
 
 const session = useSessionStore()
@@ -168,9 +168,34 @@ async function revoke(id: string): Promise<void> {
   }
 }
 
-function exportCsv(): void {
-  // TODO: реального эндпоинта экспорта пока нет. Заглушка отправки в бота.
-  toast.success('Файл отправлен в бота (заглушка)')
+// --- Выгрузка склада ---
+const exporting = ref(false)
+const withArchive = ref(false)
+
+/**
+ * Собрать CSV и получить его файлом в чате с ботом.
+ *
+ * Не скачиванием: мини-апп работает во вебвью Telegram, и ссылка на
+ * скачивание там ненадёжна — на iPhone она часто не делает ничего вовсе.
+ * Файл в переписке открывается на любом устройстве и не теряется.
+ */
+async function exportCsv(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const res = await exportApi.items(withArchive.value)
+    hapticNotify('success')
+    toast.success(
+      res.rows > 0
+        ? `Файл с ${res.rows} вещами отправлен в чат с ботом`
+        : 'Выгружать нечего — на складе пока нет вещей',
+    )
+  } catch (e) {
+    hapticNotify('error')
+    toast.error(e instanceof Error ? e.message : 'Не удалось выгрузить')
+  } finally {
+    exporting.value = false
+  }
 }
 </script>
 
@@ -324,11 +349,20 @@ function exportCsv(): void {
         </div>
       </section>
 
-      <!-- Экспорт -->
-      <section class="block">
+      <!-- Выгрузка (роли без доступа к финансам склад целиком не уносят) -->
+      <section v-if="session.canSeeFinance" class="block">
         <h2 class="block-title">Данные</h2>
-        <button class="btn-secondary tap" @click="exportCsv">Выгрузить в CSV</button>
-        <p class="note export-note">Отчёт придёт сообщением от бота.</p>
+        <label class="opt-row">
+          <span class="opt-text">Включить архив</span>
+          <input v-model="withArchive" type="checkbox" class="opt-box" />
+        </label>
+        <button class="btn-secondary tap" :disabled="exporting" @click="exportCsv">
+          {{ exporting ? 'Собираем файл…' : 'Выгрузить в CSV' }}
+        </button>
+        <p class="note export-note">
+          Придёт файлом в чат с ботом. Открывается в Excel и Google Таблицах;
+          столбцы — те же, что вы настроили в карточке вещи.
+        </p>
       </section>
 
       <div class="bottom-pad" />
@@ -674,5 +708,22 @@ function exportCsv(): void {
   background: var(--ink-2);
   color: var(--fg-0);
   font-size: 13px;
+}
+.opt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  gap: 12px;
+}
+.opt-text {
+  font-size: 14px;
+  color: var(--fg-0);
+}
+.opt-box {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+  flex: none;
 }
 </style>
