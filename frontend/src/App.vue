@@ -93,13 +93,57 @@ watch(
  * её компонент не смонтирован и данные не запрашиваются.
  */
 const seen = ref(new Set<Tab>(['inventory']))
+
+/**
+ * Вкладки, которым уже можно носить класс видимости.
+ *
+ * Зачем отдельный набор. Вкладка монтируется в том же такте, в котором
+ * становится активной, — то есть рождается сразу с opacity: 1, и переходу
+ * нечего менять. Раньше эту дырку затыкала CSS-анимация, но у неё нет
+ * fill-mode, поэтому до её первого кадра действующее значение прозрачности
+ * — конечное. Chrome коммитит первый кадр сразу и рывка не видно; WebKit на
+ * iPhone успевает отрисовать конечный кадр, и на тяжёлом кадре — например
+ * сразу после применения фильтров, когда список перезагружается, а шторка
+ * уезжает, — это видно как «экран появился, потом анимация началась заново».
+ *
+ * Теперь вкладка монтируется невидимой, а класс получает следующим кадром:
+ * значение меняется, и обычный переход отрабатывает полностью. Гадать про
+ * порядок отрисовки в разных движках больше не нужно.
+ */
+const revealed = ref(new Set<Tab>())
+
+function reveal(tab: Tab): void {
+  revealed.value = new Set(revealed.value).add(tab)
+}
+
 watch(
-  () => nav.activeTab,
-  (tab) => {
+  // Готовность сессии здесь не для порядка: до неё вкладок в DOM нет вовсе,
+  // и раскрытие, выданное заранее, означало бы, что склад смонтируется уже
+  // видимым и появится рывком — тем же, что чинится ниже.
+  [() => nav.activeTab, () => session.ready] as const,
+  ([tab, ready]) => {
+    if (!ready) return
     if (!seen.value.has(tab)) seen.value = new Set(seen.value).add(tab)
+    if (revealed.value.has(tab)) return
+    // В свёрнутом мини-аппе requestAnimationFrame не вызывается вовсе, и
+    // вкладка осталась бы невидимой до возврата. Плавность там всё равно
+    // никто не увидит — показываем сразу.
+    if (document.hidden) {
+      reveal(tab)
+      return
+    }
+    // Ждём кадр: к этому моменту вкладка уже в DOM с нулевой прозрачностью,
+    // и следующее изменение класса даёт переходу что менять. Первый показ
+    // склада на старте приложения проходит тем же путём.
+    requestAnimationFrame(() => reveal(tab))
   },
   { immediate: true },
 )
+
+/** Вкладка активна и уже вправе быть видимой. */
+function isShown(tab: Tab): boolean {
+  return nav.activeTab === tab && revealed.value.has(tab)
+}
 
 /**
  * Подтягиваем чанки оверлеев в простое, после первой отрисовки. Так старт
@@ -171,14 +215,14 @@ onMounted(() => {
           иначе настройки и аналитика на старте тянули бы лишние запросы до
           того, как покажется склад.
         -->
-        <InventoryScreen :class="{ shown: nav.activeTab === 'inventory' }" />
+        <InventoryScreen :class="{ shown: isShown('inventory') }" />
         <BiScreen
           v-if="seen.has('bi') && session.canSeeFinance"
-          :class="{ shown: nav.activeTab === 'bi' }"
+          :class="{ shown: isShown('bi') }"
         />
         <SettingsScreen
           v-if="seen.has('settings')"
-          :class="{ shown: nav.activeTab === 'settings' }"
+          :class="{ shown: isShown('settings') }"
         />
       </main>
 
@@ -220,15 +264,6 @@ onMounted(() => {
 .viewport > .shown {
   opacity: 1;
   pointer-events: auto;
-  /* Переход работает, когда меняется значение, а при первом заходе вкладка
-     рождается уже видимой — менять нечего, и она возникала рывком. Анимация
-     стартует и от появления элемента, поэтому первый показ тоже плавный. */
-  animation: tab-fade 0.22s ease;
-}
-@keyframes tab-fade {
-  from {
-    opacity: 0;
-  }
 }
 
 /* --- Экраны поверх -------------------------------------------------------
@@ -252,9 +287,6 @@ onMounted(() => {
   .ov-fade-enter-active,
   .ov-fade-leave-active {
     transition-duration: 0.01ms;
-  }
-  .viewport > .shown {
-    animation: none;
   }
 }
 .boot {
