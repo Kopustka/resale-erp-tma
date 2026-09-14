@@ -241,7 +241,13 @@ class ItemRepository:
         rows = (
             await self.session.execute(
                 select(col)
-                .where(Item.store_id == store_id, col.ilike(f"{_like(q)}%", escape="\\"))
+                .where(
+                    Item.store_id == store_id,
+                    col.ilike(f"{_like(q)}%", escape="\\"),
+                    # Бренд теперь необязателен, и пустые значения попадали
+                    # бы в подсказки пустой строкой.
+                    func.btrim(col) != "",
+                )
                 .distinct()
                 .limit(10)
             )

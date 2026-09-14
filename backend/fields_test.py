@@ -66,9 +66,13 @@ async def main():
             again = await router.list_fields(member=mm, session=s)
         chk(len(again) == len(rows), "количество не изменилось", f"{len(again)} против {len(rows)}")
 
-        print("\n[3] Бренд и категорию не спрятать")
+        print("\n[3] Бренд и категорию не спрятать, но бренд можно не требовать")
         brand = next(f for f in rows if f.key == "brand")
-        chk(brand.locked, "бренд помечен как обязательный навсегда")
+        category = next(f for f in rows if f.key == "category")
+        chk(brand.locked, "бренд нельзя убрать из формы")
+        chk(not brand.required_locked, "но обязательным быть не обязан")
+        chk(not brand.required, "по умолчанию бренд необязателен")
+        chk(category.required_locked, "категория обязательна всегда")
         async with SessionLocal() as s:
             mm = (await s.execute(select(StoreMember).where(StoreMember.store_id == sid))).scalar_one()
             try:
@@ -78,6 +82,27 @@ async def main():
                 chk(False, "скрыть бренд запрещено")
             except HTTPException as e:
                 chk(e.status_code == 422, "скрыть бренд запрещено (422)", str(e.status_code))
+            try:
+                await router.update_fields(
+                    payload=FieldsUpdate(fields=[FieldPatch(id=category.id, required=False)]),
+                    member=mm, session=s)
+                chk(False, "категорию нельзя сделать необязательной")
+            except HTTPException as e:
+                chk(e.status_code == 422, "категорию нельзя сделать необязательной (422)",
+                    str(e.status_code))
+            # А бренд — можно, туда и обратно.
+            upd = await router.update_fields(
+                payload=FieldsUpdate(fields=[FieldPatch(id=brand.id, required=True)]),
+                member=mm, session=s)
+            chk(next(f for f in upd if f.key == "brand").required,
+                "бренд можно сделать обязательным, если магазин так хочет")
+        async with SessionLocal() as s:
+            mm = (await s.execute(select(StoreMember).where(StoreMember.store_id == sid))).scalar_one()
+            upd = await router.update_fields(
+                payload=FieldsUpdate(fields=[FieldPatch(id=brand.id, required=False)]),
+                member=mm, session=s)
+            chk(not next(f for f in upd if f.key == "brand").required,
+                "и вернуть обратно")
 
         print("\n[4] Переименование, порядок и видимость сохраняются")
         color = next(f for f in rows if f.key == "color")

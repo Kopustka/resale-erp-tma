@@ -12,7 +12,7 @@ import uuid
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text, update
 
 from app.db import SessionLocal
 from app.models import (
@@ -465,6 +465,62 @@ async def main() -> None:
             "в варианте без финансов нет денежных колонок", emp_head[-60:])
         chk("Отдал курьеру" not in emp_head,
             "своё денежное поле тоже не попало", emp_head)
+
+        # ---------------------------------------------------------------- #
+        print("\n[13] Вещь без бренда")
+        async with SessionLocal() as s:
+            mo = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == owner_id, StoreMember.store_id == store_id))).scalar_one()
+            u = (await s.execute(select(User).where(User.id == owner_id))).scalar_one()
+            noname = await items_router.create_item(
+                payload=ItemCreate(category="Кроссовки", title=""),
+                member=mo, session=s, user=u,
+            )
+        chk(noname.brand == "", "бренд можно не указывать вовсе", repr(noname.brand))
+        chk(noname.title == "Кроссовки",
+            "название собралось из одной категории, без ведущего пробела",
+            repr(noname.title))
+
+        # Пустой бренд не должен предлагаться в подсказках.
+        async with SessionLocal() as s:
+            mo = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == owner_id, StoreMember.store_id == store_id))).scalar_one()
+            hints = await items_router.suggest(field="brand", q="", member=mo, session=s)
+        chk("" not in hints, "пустой бренд не попадает в подсказки", str(hints))
+
+        # И не исчезает из разреза «что приносит деньги», а идёт своей строкой.
+        async with SessionLocal() as s:
+            from app.repositories.analytics import AnalyticsRepository
+            groups = await AnalyticsRepository(s).by_group(store_id, "brand")
+        names = [g["name"] for g in groups]
+        counted = sum(g["total"] for g in groups)
+        async with SessionLocal() as s:
+            alive = (await s.execute(select(func.count(Item.id)).where(
+                Item.store_id == store_id, Item.archived_at.is_(None)))).scalar_one()
+        chk("Без бренда" in names, "безымянные показаны отдельной строкой", str(names))
+        chk(counted == alive,
+            "в разрезе учтены все вещи, ничего не потерялось",
+            f"в разрезе {counted}, на складе {alive}")
+
+        # Если магазин хочет — бренд снова обязателен, и сервер это блюдёт.
+        async with SessionLocal() as s:
+            await s.execute(
+                update(StoreField)
+                .where(StoreField.store_id == store_id, StoreField.key == "brand")
+                .values(required=True)
+            )
+            await s.commit()
+        async with SessionLocal() as s:
+            mo = (await s.execute(select(StoreMember).where(
+                StoreMember.user_id == owner_id, StoreMember.store_id == store_id))).scalar_one()
+            u = (await s.execute(select(User).where(User.id == owner_id))).scalar_one()
+            await expect_status(
+                items_router.create_item(
+                    payload=ItemCreate(category="Кроссовки", title="Без имени"),
+                    member=mo, session=s, user=u,
+                ),
+                422, "включили обязательность — пустой бренд отбивается",
+            )
 
     finally:
         async with SessionLocal() as s:

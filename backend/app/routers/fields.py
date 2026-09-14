@@ -36,6 +36,7 @@ def _out(f: StoreField) -> FieldOut:
         options=list(f.options or []),
         hint=f.hint,
         locked=f.key in svc.LOCKED_KEYS,
+        required_locked=f.key in svc.REQUIRED_KEYS,
     )
 
 
@@ -75,15 +76,15 @@ async def update_fields(
         if patch.options is not None:
             f.options = [o.strip() for o in patch.options if o.strip()][:20]
 
-        # Бренд и категорию не спрятать и не сделать необязательными: без них
-        # вещь не отличить от другой, а название генерируется из них же.
-        locked = f.key in svc.LOCKED_KEYS
+        # Название вещи собирается из бренда и категории, поэтому убрать их
+        # из формы нельзя. Обязательность — отдельный вопрос: категорию без
+        # неё не отличить, а бренд у вещи может просто отсутствовать.
         if patch.enabled is not None:
-            if locked and not patch.enabled:
+            if f.key in svc.LOCKED_KEYS and not patch.enabled:
                 raise HTTPException(422, f"«{f.label}» нельзя скрыть")
             f.enabled = patch.enabled
         if patch.required is not None:
-            if locked and not patch.required:
+            if f.key in svc.REQUIRED_KEYS and not patch.required:
                 raise HTTPException(422, f"«{f.label}» всегда обязательно")
             f.required = patch.required
 

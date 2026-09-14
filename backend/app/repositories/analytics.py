@@ -206,6 +206,14 @@ class AnalyticsRepository:
         случилось.
         """
         col = Item.brand if field == "brand" else Item.category
+        # Пустые значения не выбрасываем, а собираем в отдельную строку.
+        # Бренд стал необязательным, и молчаливый пропуск означал бы, что
+        # прибыль с безымянных вещей исчезает из разреза «что приносит
+        # деньги», а сумма по строкам перестаёт сходиться с общей.
+        name_col = func.coalesce(
+            func.nullif(func.btrim(col), ""),
+            "Без бренда" if field == "brand" else "Без категории",
+        )
         invested = Item.cost_price + Item.restore_cost + Item.delivery_cost
         profit = Item.selling_price - invested - Item.platform_fee
         is_sold = and_(Item.status.in_(SOLD_STATUSES), Item.selling_price.isnot(None))
@@ -217,7 +225,7 @@ class AnalyticsRepository:
         rows = (
             await self.session.execute(
                 select(
-                    col.label("name"),
+                    name_col.label("name"),
                     func.count().label("total"),
                     func.count().filter(is_sold).label("sold"),
                     func.coalesce(
@@ -232,10 +240,8 @@ class AnalyticsRepository:
                 .where(
                     Item.store_id == store_id,
                     Item.archived_at.is_(None),
-                    col.isnot(None),
-                    col != "",
                 )
-                .group_by(col)
+                .group_by(name_col)
                 .order_by(func.count().desc())
                 .limit(20)
             )

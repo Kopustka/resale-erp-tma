@@ -24,6 +24,30 @@ log = logging.getLogger("api")
 # добавить колонку в существующую он не может. Пока мигратора не завели,
 # держим здесь идемпотентные ALTER: они безопасны при каждом старте.
 _ENSURE_COLUMNS = (
+    # Учёт разовых миграций. Всё остальное здесь идемпотентно по построению
+    # («ADD COLUMN IF NOT EXISTS»), но бывают правки, которые нельзя
+    # повторять: они меняют значение, а не структуру, и повтор затёр бы то,
+    # что человек с тех пор поменял сам.
+    """
+    CREATE TABLE IF NOT EXISTS applied_migrations (
+        id TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    # Бренд перестал быть обязательным: у вещей с барахолки его часто нет.
+    # Складам, заведённым раньше, снимаем флаг один раз — если владелец
+    # потом сам вернёт бренд в обязательные, следующий старт это не отменит.
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM applied_migrations WHERE id = 'brand_optional'
+        ) THEN
+            UPDATE store_fields SET required = FALSE WHERE key = 'brand';
+            INSERT INTO applied_migrations (id) VALUES ('brand_optional');
+        END IF;
+    END $$
+    """,
     # Индекс под фильтр по категории: он появился позже остальных, и на
     # существующих базах create_all его уже не добавит.
     "CREATE INDEX IF NOT EXISTS ix_items_store_category ON items (store_id, category)",

@@ -419,7 +419,10 @@ export interface FormField {
   options: string[]
   hint: string | null
   /** Поле нельзя скрыть или сделать необязательным — решает сервер. */
+  /** Нельзя убрать из формы. */
   locked: boolean
+  /** Нельзя сделать необязательным. */
+  required_locked: boolean
 }
 
 export interface FieldPatch {

@@ -80,7 +80,12 @@ function toggle(f: FormField): void {
 }
 
 function toggleRequired(f: FormField): void {
-  if (f.locked) return
+  // Скрыть и «сделать необязательным» — разные запреты. Бренд из формы не
+  // убрать (из него собирается название), но вещь без бренда существует.
+  if (f.required_locked) {
+    toast.show({ message: `«${f.label}» всегда обязательно`, kind: 'info' })
+    return
+  }
   hapticSelection()
   f.required = !f.required
   dirty.value = true

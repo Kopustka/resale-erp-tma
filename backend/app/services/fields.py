@@ -27,7 +27,7 @@ from ..models import FieldKind, StoreField
 #: чтобы у существующих складов ничего не переехало.
 DEFAULTS: list[tuple[str, str, FieldKind, bool, bool]] = [
     ("title", "Название", FieldKind.TEXT, False, True),
-    ("brand", "Бренд", FieldKind.TEXT, True, True),
+    ("brand", "Бренд", FieldKind.TEXT, False, True),
     ("category", "Категория", FieldKind.TEXT, True, True),
     ("size", "Размер", FieldKind.TEXT, False, True),
     ("color", "Цвет", FieldKind.TEXT, False, True),
@@ -47,8 +47,17 @@ DEFAULTS: list[tuple[str, str, FieldKind, bool, bool]] = [
 #: Ключи встроенных полей — их нельзя удалить и нельзя завести заново.
 BUILTIN_KEYS = {k for k, *_ in DEFAULTS}
 
-#: Поля, без которых вещь не создать: их не скрыть и не сделать необязательными.
+#: Поля, которые нельзя убрать из формы: из них собирается название вещи,
+#: когда его не ввели руками.
 LOCKED_KEYS = {"brand", "category"}
+
+#: Поля, которые нельзя сделать необязательными.
+#:
+#: Бренда здесь нет намеренно. У вещей с барахолки его часто попросту нет —
+#: переписывать нечего, и требовать выдуманное значение означало бы копить
+#: в базе «нет бренда», «no name» и прочие заполнители. Поле остаётся в
+#: форме: кто бренд знает, тот его впишет.
+REQUIRED_KEYS = {"category"}
 
 _SLUG = re.compile(r"[^a-z0-9_]+")
 

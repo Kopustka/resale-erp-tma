@@ -21,7 +21,8 @@ class ItemBase(BaseModel):
     # — пользователь видел «внутреннюю ошибку сервера» вместо подсказки,
     # какое поле сократить.
     title: str = Field("", max_length=100)
-    brand: str = Field(..., max_length=80)
+    #: Может не быть вовсе: у вещей с барахолки бренда часто нет.
+    brand: str = Field("", max_length=80)
     category: str = Field(..., max_length=60)
     size: str | None = Field(None, max_length=20)
     color: str | None = Field(None, max_length=40)
@@ -600,7 +601,10 @@ class FieldOut(BaseModel):
     hint: str | None = None
     #: Можно ли выключить или сделать необязательным. Без вычисленного флага
     #: клиенту пришлось бы дублировать правило, а оно живёт на сервере.
+    #: Нельзя убрать из формы.
     locked: bool = False
+    #: Нельзя сделать необязательным.
+    required_locked: bool = False
 
 
 class FieldPatch(BaseModel):
